@@ -347,7 +347,7 @@ export const ClubDashboardPage = () => {
                         )}
                     </fieldset>
 
-                    <button className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+                    <button className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 px-4 py-2.5 text-sm font-bold text-black shadow-[0_10px_24px_rgba(249,115,22,0.28)] transition-all duration-200 hover:-translate-y-0.5 hover:from-amber-300 hover:to-orange-400 hover:shadow-[0_14px_28px_rgba(249,115,22,0.34)] focus:outline-none focus:ring-2 focus:ring-amber-300 focus:ring-offset-2 focus:ring-offset-transparent">
                         Create Event
                     </button>
                 </form>
