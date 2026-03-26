@@ -1,12 +1,11 @@
 from fastapi import FastAPI
-from routes import events
-from routes import chat
+from routes import events, chat, profile
 
 app = FastAPI()
 
-# Include routes
 app.include_router(events.router)
 app.include_router(chat.router)
+app.include_router(profile.router, prefix="/profile")
 
 @app.get("/")
 def root():
