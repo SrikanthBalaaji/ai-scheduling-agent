@@ -1,0 +1,373 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@600;700;800&display=swap');
+@import 'tailwindcss';
+
+:root {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, #fde68a 0%, transparent 42%),
+    radial-gradient(circle at 85% 12%, #bfdbfe 0%, transparent 38%),
+    #f8fafc;
+}
+
+h1,
+h2,
+h3 {
+  font-family: 'Sora', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  transition: background-color 320ms ease, color 320ms ease;
+}
+
+html.dark body {
+  color: #e2e8f0;
+  background:
+    radial-gradient(circle at top left, #374151 0%, transparent 44%),
+    radial-gradient(circle at 85% 12%, #1f2937 0%, transparent 42%),
+    #06080c;
+}
+
+html.dark .bg-slate-100 {
+  background-color: #0b1017 !important;
+}
+
+html.dark .bg-white,
+html.dark .bg-white\/90,
+html.dark .bg-white\/85 {
+  background-color: #121926 !important;
+}
+
+html.dark .text-slate-900 {
+  color: #f8fafc !important;
+}
+
+html.dark .text-slate-800 {
+  color: #e2e8f0 !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .border-slate-200,
+html.dark .border-slate-300,
+html.dark .border-amber-200,
+html.dark .border-amber-200\/80 {
+  border-color: #324052 !important;
+}
+
+html.dark .ring-amber-100\/60,
+html.dark .ring-amber-200,
+html.dark .ring-emerald-200 {
+  --tw-ring-color: #324052 !important;
+}
+
+html.dark .bg-amber-50,
+html.dark .bg-amber-100,
+html.dark .bg-slate-100,
+html.dark .bg-emerald-50 {
+  background-color: #182230 !important;
+}
+
+html.dark .theme-toggle {
+  background-color: #121926 !important;
+  border-color: #324052 !important;
+  color: #f8fafc !important;
+}
+
+html.dark .shadow-sm {
+  box-shadow:
+    0 8px 20px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(148, 163, 184, 0.16) !important;
+}
+
+html.dark .shadow-lg,
+html.dark .shadow-xl,
+html.dark .shadow-2xl {
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(148, 163, 184, 0.18) !important;
+}
+
+.login-shell {
+  background:
+    radial-gradient(circle at 20% 20%, #fde68a 0%, transparent 40%),
+    radial-gradient(circle at 90% 10%, #fcd34d 0%, transparent 36%),
+    #fafaf9;
+}
+
+.login-card {
+  background-color: rgba(255, 252, 245, 0.92);
+  border-color: #fcd34d;
+}
+
+.login-title {
+  color: #0f172a;
+}
+
+.login-subtitle {
+  color: #334155;
+}
+
+.login-label {
+  color: #1e293b;
+}
+
+.login-input {
+  background-color: #fffbeb;
+  color: #0f172a;
+  border-color: #fcd34d;
+}
+
+.login-input::placeholder {
+  color: #64748b;
+}
+
+.login-submit {
+  background: linear-gradient(135deg, #fcd34d, #fbbf24);
+  color: #111827;
+  box-shadow: 0 8px 18px rgba(251, 191, 36, 0.26);
+}
+
+.login-submit:hover {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}
+
+.role-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  border: 1px solid #fcd34d;
+  background: rgba(255, 249, 235, 0.9);
+  padding: 0.45rem;
+  border-radius: 0.95rem;
+}
+
+.role-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  padding: 0.75rem 0.5rem;
+  font-weight: 700;
+  color: #7c5a2a;
+  transition: all 220ms ease;
+}
+
+.role-option:hover {
+  background: #fef3c7;
+  color: #5b3f1a;
+}
+
+.role-option-active {
+  background: linear-gradient(135deg, #fcd34d, #fbbf24);
+  color: #111827;
+  box-shadow: 0 8px 16px rgba(251, 191, 36, 0.28);
+}
+
+.interest-chip-idle {
+  border: 1px solid #fcd34d;
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.interest-chip-active {
+  background-color: #fbbf24 !important;
+  color: #111827 !important;
+  box-shadow: 0 6px 14px rgba(251, 191, 36, 0.24);
+}
+
+.nav-link:hover {
+  background-color: #fcd34d;
+  color: #111827 !important;
+}
+
+html.dark .login-shell {
+  background:
+    radial-gradient(circle at 20% 20%, rgba(251, 191, 36, 0.2) 0%, transparent 42%),
+    radial-gradient(circle at 90% 10%, rgba(245, 158, 11, 0.14) 0%, transparent 40%),
+    #0a0f16;
+}
+
+html.dark .login-card {
+  background-color: rgba(18, 25, 38, 0.92) !important;
+  border-color: #a16207 !important;
+}
+
+html.dark .login-title {
+  color: #f8fafc !important;
+}
+
+html.dark .login-subtitle {
+  color: #d1d5db !important;
+}
+
+html.dark .login-label {
+  color: #f3f4f6 !important;
+}
+
+html.dark .login-input {
+  background-color: #111111 !important;
+  color: #f9fafb !important;
+  border-color: #a16207 !important;
+}
+
+html.dark .login-input::placeholder {
+  color: #9ca3af !important;
+}
+
+html.dark .role-switch {
+  border-color: #a16207;
+  background: rgba(24, 19, 12, 0.76);
+}
+
+html.dark .role-option {
+  color: #f5d59a;
+}
+
+html.dark .role-option:hover {
+  background: #2a2318;
+  color: #fde68a;
+}
+
+html.dark .role-option-active {
+  color: #111827;
+  background: linear-gradient(135deg, #fcd34d, #fbbf24);
+}
+
+html.dark .interest-chip-idle {
+  background-color: #1c1917 !important;
+  color: #fcd34d !important;
+  border-color: #a16207 !important;
+}
+
+html.dark .interest-chip-idle:hover {
+  background-color: #292524 !important;
+}
+
+html.dark .interest-chip-active {
+  background-color: #fbbf24 !important;
+  color: #111827 !important;
+}
+
+html.dark .nav-link {
+  color: #e2e8f0 !important;
+}
+
+html.dark .nav-link:hover {
+  background-color: #fbbf24;
+  color: #111827 !important;
+}
+
+html.dark .nav-link-active {
+  color: #111827 !important;
+  box-shadow:
+    0 0 0 2px rgba(251, 191, 36, 0.45),
+    0 0 24px rgba(251, 191, 36, 0.25);
+}
+
+.calendar-side-card {
+  border-color: #dbe3ee;
+}
+
+.calendar-upcoming {
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.calendar-upcoming-item {
+  background-color: #eef6ff;
+  border: 1px solid #d7e8ff;
+}
+
+.calendar-freetime {
+  background: linear-gradient(180deg, #f3fbf6 0%, #ffffff 100%);
+}
+
+.calendar-freetime-item {
+  background-color: #e8f8ee;
+  border-color: #b7e7c7 !important;
+}
+
+html.dark .calendar-side-card {
+  border-color: #3a495c !important;
+}
+
+html.dark .calendar-upcoming {
+  background: linear-gradient(180deg, #182538 0%, #121926 100%) !important;
+}
+
+html.dark .calendar-upcoming-item {
+  background-color: #203147 !important;
+  border-color: #35537a !important;
+}
+
+html.dark .calendar-freetime {
+  background: linear-gradient(180deg, #152b24 0%, #121926 100%) !important;
+}
+
+html.dark .calendar-freetime-item {
+  background-color: #1d3c32 !important;
+  border-color: #356d5a !important;
+}
+
+.event-card {
+  isolation: isolate;
+}
+
+.event-card::after {
+  content: '';
+  position: absolute;
+  inset: -140% -70%;
+  background: linear-gradient(120deg,
+      transparent 35%,
+      rgba(251, 191, 36, 0.26) 50%,
+      transparent 65%);
+  transform: translateX(-65%) rotate(9deg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+
+.event-card:hover {
+  transform: translateY(-6px) scale(1.01);
+  border-color: #f59e0b;
+  box-shadow:
+    0 14px 28px rgba(245, 158, 11, 0.22),
+    0 8px 12px rgba(15, 23, 42, 0.12);
+}
+
+.event-card:hover::after {
+  opacity: 1;
+  animation: event-card-shine 700ms ease forwards;
+}
+
+html.dark .event-card:hover {
+  border-color: #fbbf24;
+  box-shadow:
+    0 14px 28px rgba(251, 191, 36, 0.2),
+    0 8px 12px rgba(0, 0, 0, 0.55);
+}
+
+@keyframes event-card-shine {
+  from {
+    transform: translateX(-70%) rotate(9deg);
+  }
+
+  to {
+    transform: translateX(70%) rotate(9deg);
+  }
+}
