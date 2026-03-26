@@ -6,6 +6,9 @@ export const NotificationTray = () => {
     if (!notifications.length) {
         return (
             <aside className="rounded-2xl border border-emerald-100 bg-white/90 p-4 shadow-sm">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                    Notifications
+                </p>
                 <p className="text-sm text-slate-600">No active alerts.</p>
             </aside>
         )
@@ -13,6 +16,9 @@ export const NotificationTray = () => {
 
     return (
         <aside className="space-y-2 rounded-2xl border border-emerald-100 bg-white/90 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                Notifications
+            </p>
             {notifications.map((item) => (
                 <div
                     key={item.id}

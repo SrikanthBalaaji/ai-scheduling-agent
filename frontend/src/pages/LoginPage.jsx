@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { interestOptions } from '../data/mockEvents'
+import { AnimatedRoleSwitcher } from '../components/AnimatedRoleSwitcher'
 import { useAppContext } from '../context/AppContext'
 
 export const LoginPage = () => {
@@ -33,10 +34,10 @@ export const LoginPage = () => {
         <main className="login-shell relative min-h-screen overflow-hidden px-4 py-14 transition-colors duration-300">
             <div className="login-card mx-auto w-full max-w-md rounded-3xl border border-amber-200 bg-white/85 p-6 shadow-2xl backdrop-blur">
                 <h1 className="login-title text-3xl font-black tracking-tight text-slate-900">
-                    Student AI Planner
+                    Planora
                 </h1>
                 <p className="login-subtitle mt-2 text-sm text-slate-600">
-                    One login for students and club organizers.
+                    Discover events. Plan smarter. Never miss what matters.
                 </p>
 
                 <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -52,34 +53,8 @@ export const LoginPage = () => {
 
                     <fieldset className="space-y-2">
                         <legend className="login-label text-sm font-semibold text-slate-700">Role</legend>
-                        <div className="role-switch" role="radiogroup" aria-label="Select role">
-                            <button
-                                type="button"
-                                role="radio"
-                                aria-checked={role === 'student'}
-                                onClick={() => setRole('student')}
-                                className={`role-option ${role === 'student' ? 'role-option-active' : ''}`}
-                            >
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-                                    <path d="M15 20v-1a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v1" />
-                                    <circle cx="9" cy="7" r="4" />
-                                </svg>
-                                <span>Student</span>
-                            </button>
-
-                            <button
-                                type="button"
-                                role="radio"
-                                aria-checked={role === 'club'}
-                                onClick={() => setRole('club')}
-                                className={`role-option ${role === 'club' ? 'role-option-active' : ''}`}
-                            >
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
-                                    <path d="M12 3l7 4v5c0 5-3.5 8-7 9-3.5-1-7-4-7-9V7l7-4z" />
-                                    <path d="m9.2 12.3 1.8 1.8 3.8-3.8" />
-                                </svg>
-                                <span>Club Member</span>
-                            </button>
+                        <div role="radiogroup" aria-label="Select role">
+                            <AnimatedRoleSwitcher value={role} onChange={setRole} />
                         </div>
                     </fieldset>
 
@@ -108,7 +83,7 @@ export const LoginPage = () => {
 
                     <button
                         type="submit"
-                        className="login-submit w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900"
+                        className="login-submit w-full rounded-xl px-4 py-2.5 text-sm font-semibold"
                     >
                         Continue
                     </button>

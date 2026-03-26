@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Modal } from '../components/Modal'
+import { AnimatedViewSwitcher } from '../components/AnimatedViewSwitcher'
 import { useAppContext } from '../context/AppContext'
 
 const categoryColor = {
@@ -64,30 +65,16 @@ export const CalendarPage = () => {
                 <p className="text-sm text-slate-800">Monthly, weekly, and daily snapshots with category colors.</p>
             </section>
 
-            <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="space-x-2">
-                    <button
-                        onClick={() => setViewMode('daily')}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold ${viewMode === 'daily' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
-                            }`}
-                    >
-                        Daily View
-                    </button>
-                    <button
-                        onClick={() => setViewMode('weekly')}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold ${viewMode === 'weekly' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
-                            }`}
-                    >
-                        Weekly View
-                    </button>
-                    <button
-                        onClick={() => setViewMode('monthly')}
-                        className={`rounded-full px-4 py-2 text-sm font-semibold ${viewMode === 'monthly' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
-                            }`}
-                    >
-                        Monthly View
-                    </button>
-                </div>
+            <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <AnimatedViewSwitcher
+                    options={[
+                        { value: 'daily', label: 'Daily View' },
+                        { value: 'weekly', label: 'Weekly View' },
+                        { value: 'monthly', label: 'Monthly View' },
+                    ]}
+                    value={viewMode}
+                    onChange={setViewMode}
+                />
             </section>
 
             <section className="grid gap-6 lg:grid-cols-[2fr_1fr]">
