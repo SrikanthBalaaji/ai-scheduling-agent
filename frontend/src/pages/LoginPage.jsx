@@ -34,10 +34,10 @@ export const LoginPage = () => {
         <main className="login-shell relative min-h-screen overflow-hidden px-4 py-14 transition-colors duration-300">
             <div className="login-card mx-auto w-full max-w-md rounded-3xl border border-amber-200 bg-white/85 p-6 shadow-2xl backdrop-blur">
                 <h1 className="login-title text-3xl font-black tracking-tight text-slate-900">
-                    Student AI Planner
+                    Planora
                 </h1>
                 <p className="login-subtitle mt-2 text-sm text-slate-600">
-                    One login for students and club organizers.
+                    Discover events. Plan smarter. Never miss what matters.
                 </p>
 
                 <form onSubmit={handleSubmit} className="mt-6 space-y-4">
@@ -83,7 +83,7 @@ export const LoginPage = () => {
 
                     <button
                         type="submit"
-                        className="login-submit w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-900"
+                        className="login-submit w-full rounded-xl px-4 py-2.5 text-sm font-semibold"
                     >
                         Continue
                     </button>
