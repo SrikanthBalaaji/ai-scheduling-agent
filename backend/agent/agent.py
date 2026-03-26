@@ -83,13 +83,29 @@ def score_event(event: Dict, calendar: List[Dict], profile: Dict) -> float:
     
     return max(0, min(10, score))
 
-def simple_agent(user_id: str, user_message: str, events: List[Dict]) -> Dict:
+def simple_agent(user_id: str, user_message: str, events: List[Dict], calendar: List[Dict]) -> Dict:
     """
     Main agent logic. Returns dict matching ChatResponse format.
     """
     message = user_message.lower()
-    calendar = get_user_calendar(user_id)
     profile = get_user_profile(user_id)
+    
+    if message.startswith("yes ") or message.startswith("confirm "):
+        parts = message.split()
+        if len(parts) >= 2:
+            event_id = parts[1]
+            for ev in events:
+                if str(ev.get("id")) == event_id:
+                    return {
+                        "reply": "Adding event to your calendar...",
+                        "action": "add_to_calendar",
+                        "event_to_add": ev
+                    }
+        return {
+            "reply": "No event found by that id. Please use 'yes <event_id>' from the recommendations.",
+            "action": "clarify",
+            "recommended_event": None
+        }
     
     if "schedule" in message:
         return {
@@ -105,7 +121,7 @@ def simple_agent(user_id: str, user_message: str, events: List[Dict]) -> Dict:
             s = score_event(event, calendar, profile)
             scored.append((s, event))
         
-        scored.sort(reverse=True)
+        scored.sort(key=lambda x: x[0], reverse=True)
         
         if not scored:
             return {
@@ -114,32 +130,92 @@ def simple_agent(user_id: str, user_message: str, events: List[Dict]) -> Dict:
                 "recommended_event": None
             }
         
-        best_score, best_event = scored[0]
-        
+        top_events = scored[:3]
+        best_score, best_event = top_events[0]
+
+        def event_reason(score, event):
+            reasons = []
+            interests = [i.lower() for i in profile.get("interests", [])]
+            tags = [t.lower() for t in event.get("tags", [])]
+            if any(interest in tags for interest in interests):
+                reasons.append("Matches your interests")
+
+            conflict = False
+            for entry in calendar:
+                if event.get("date") == entry.get("date"):
+                    if time_overlap(
+                        event.get("start_time"), event.get("end_time"),
+                        entry.get("start_time"), entry.get("end_time")
+                    ):
+                        conflict = True
+                        break
+            if not conflict:
+                reasons.append("No schedule conflicts")
+
+            if score >= 8:
+                reasons.append("Highly relevant")
+
+            return reasons[0] if reasons else "Recommended"
+
+        recommendations = []
+        for score, ev in top_events:
+            recommendations.append({
+                "event": ev,
+                "score": score,
+                "reason": event_reason(score, ev)
+            })
+
         has_conflict = False
         conflict_with = None
         for entry in calendar:
-            if best_event["date"] == entry["date"]:
+            if best_event.get("date") == entry.get("date"):
                 if time_overlap(
-                    best_event["start_time"], best_event["end_time"],
-                    entry["start_time"], entry["end_time"]
+                    best_event.get("start_time"), best_event.get("end_time"),
+                    entry.get("start_time"), entry.get("end_time")
                 ):
                     has_conflict = True
                     conflict_with = entry
                     break
-        
+
         if has_conflict:
-            return {
-                "reply": f"I recommend '{best_event['title']}' (score: {best_score:.1f}/10), but it conflicts with your '{conflict_with['title']}'. Consider which is more important for your goals.",
-                "action": "recommend_with_conflict",
-                "recommended_event": best_event
-            }
-        else:
-            return {
-                "reply": f"I recommend '{best_event['title']}' (score: {best_score:.1f}/10). No conflicts detected.",
-                "action": "recommend",
-                "recommended_event": best_event
-            }
+            alternative_event = None
+            for score, ev in top_events:
+                conflict = False
+                for entry in calendar:
+                    if ev.get("date") == entry.get("date"):
+                        if time_overlap(
+                            ev.get("start_time"), ev.get("end_time"),
+                            entry.get("start_time"), entry.get("end_time")
+                        ):
+                            conflict = True
+                            break
+                if not conflict:
+                    alternative_event = ev
+                    break
+
+            if alternative_event:
+                return {
+                    "reply": f"'{best_event['title']}' conflicts with your schedule. You can attend '{alternative_event['title']}' instead.",
+                    "action": "recommend_alternative",
+                    "recommended_event": alternative_event,
+                    "requires_confirmation": True,
+                    "confirmation_token": alternative_event.get("id")
+                }
+            else:
+                return {
+                    "reply": f"'{best_event['title']}' conflicts with your schedule. No better alternatives found.",
+                    "action": "recommend_with_conflict",
+                    "recommended_event": best_event,
+                    "confirmation_token": best_event.get("id")
+                }
+
+        return {
+            "reply": f"I recommend {len(recommendations)} events. Say 'yes <event_id>' to add one to your calendar.",
+            "action": "recommend_multiple",
+            "recommendations": recommendations,
+            "requires_confirmation": True,
+            "confirmation_token": best_event.get("id")
+        }
     
     return {
         "reply": "I can help you find events, check conflicts, or see your schedule. What would you like to know?",
