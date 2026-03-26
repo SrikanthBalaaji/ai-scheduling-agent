@@ -28,7 +28,8 @@ def get_events(date: str = None, tag: str = None):
             date=r[2],
             start_time=r[3],
             end_time=r[4],
-            tags=r[5].split(",")
+            tags=r[5].split(","),
+            description=r[6] if len(r) > 6 else ""
         )
         for r in rows
     ]
