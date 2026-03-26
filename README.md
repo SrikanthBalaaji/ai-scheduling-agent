@@ -1,16 +1,49 @@
-# React + Vite
+# AI Scheduling Agent
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+AI-powered student planner with an event billboard, personal calendar, and AI-assisted scheduling.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Backend: FastAPI
+- Frontend: React (Vite)
+- Database: SQLite
+- Agent: LangGraph (planned)
 
-## React Compiler
+## Project Structure
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- backend/
+- frontend/
+- shared/
 
-## Expanding the ESLint configuration
+## Frontend (Vite)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Run Frontend
+
+```bash
+npm install
+npm run dev
+```
+
+### Build Frontend
+
+```bash
+npm run build
+```
+
+## Backend
+
+### Run Backend
+
+```bash
+cd backend
+uvicorn main:app --reload
+```
+
+### API Base URL
+
+`http://localhost:8000`
+
+## Notes
+
+- Keep implementation minimal (hackathon scope).
+- Coordinate before changing shared schemas or other modules.
