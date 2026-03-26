@@ -1,12 +1,14 @@
 from fastapi import FastAPI
 from routes import events
 from routes import chat
+from db.database import seed_events
 
 app = FastAPI()
 
-# Include routes
 app.include_router(events.router)
 app.include_router(chat.router)
+
+seed_events()   
 
 @app.get("/")
 def root():

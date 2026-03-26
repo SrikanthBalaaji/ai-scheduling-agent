@@ -1,32 +1,34 @@
 from fastapi import APIRouter
+from db.database import cursor
+from schemas import Event
 
-router = APIRouter()
+router = APIRouter()   # 🔥 THIS WAS MISSING
+
 
 @router.get("/events")
-def get_events():
+def get_events(date: str = None, tag: str = None):
+    query = "SELECT * FROM events WHERE 1=1"
+    params = []
+
+    if date:
+        query += " AND date=?"
+        params.append(date)
+
+    if tag:
+        query += " AND tags LIKE ?"
+        params.append(f"%{tag}%")
+
+    cursor.execute(query, params)
+    rows = cursor.fetchall()
+
     return [
-        {
-            "id": "1",
-            "title": "Hackathon",
-            "club": "Coding Club",
-            "description": "24hr coding event",
-            "date": "2026-03-30",
-            "start_time": "10:00",
-            "end_time": "18:00",
-            "location": "Auditorium",
-            "tags": ["tech"],
-            "registration_url": "https://example.com"
-        },
-        {
-            "id": "2",
-            "title": "Music Night",
-            "club": "Cultural Club",
-            "description": "Live performances",
-            "date": "2026-03-30",
-            "start_time": "17:00",
-            "end_time": "20:00",
-            "location": "Main Stage",
-            "tags": ["cultural"],
-            "registration_url": "https://example.com"
-        }
+        Event(
+            id=r[0],
+            title=r[1],
+            date=r[2],
+            start_time=r[3],
+            end_time=r[4],
+            tags=r[5].split(",")
+        )
+        for r in rows
     ]
