@@ -328,6 +328,66 @@ html.dark .calendar-freetime-item {
   isolation: isolate;
 }
 
+.filter-bar {
+  border-color: #dbe3ee;
+  background: linear-gradient(135deg, #ffffff 0%, #fef3c7 100%);
+}
+
+.filter-label>span {
+  color: #64748b;
+}
+
+.filter-field {
+  color: #0f172a;
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.92);
+}
+
+.filter-leading-icon {
+  color: #64748b;
+}
+
+.filter-trailing-icon {
+  color: #475569;
+}
+
+html.dark .filter-bar {
+  border-color: #334155 !important;
+  background: linear-gradient(135deg, #182235 0%, #121926 100%) !important;
+}
+
+html.dark .filter-label {
+  color: #e2e8f0 !important;
+}
+
+html.dark .filter-label>span {
+  color: #94a3b8 !important;
+}
+
+html.dark .filter-field {
+  color: #f1f5f9 !important;
+  border-color: #3a4b61 !important;
+  background-color: #0f1726 !important;
+}
+
+html.dark .filter-field:focus {
+  border-color: #fbbf24 !important;
+  --tw-ring-color: rgba(251, 191, 36, 0.26) !important;
+}
+
+html.dark .filter-leading-icon {
+  color: #94a3b8 !important;
+}
+
+html.dark .filter-trailing-icon {
+  color: #cbd5e1 !important;
+}
+
+html.dark .filter-field[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(0.9);
+  opacity: 0.95;
+}
+
 .event-card::after {
   content: '';
   position: absolute;
