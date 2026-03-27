@@ -1,202 +1,11 @@
 import os
 from typing import List, Dict
-from pathlib import Path
-from datetime import datetime, timedelta
-import re
 
 import requests
+from google import genai
+import os
 
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
-
-_ENV_LOADED = False
-
-MISTRAL_MODEL_FALLBACKS = [
-    "mistralai/mistral-7b-instruct-v0.1",
-    "mistralai/mistral-7b-instruct",
-    "mistralai/mistral-7b-instruct-v0.2",
-    "mistralai/mistral-7b-instruct-v0.3",
-    "mistralai/mistral-7b-instruct:free",
-    "mistralai/mistral-nemo:free",
-    "mistralai/mistral-small-3.2-24b-instruct:free",
-]
-
-PERSONAL_EVENT_DRAFTS: Dict[str, Dict] = {}
-PENDING_PERSONAL_EVENTS: Dict[str, Dict] = {}
-MONTH_NAME_TO_NUMBER = {
-    "january": 1,
-    "february": 2,
-    "march": 3,
-    "april": 4,
-    "may": 5,
-    "june": 6,
-    "july": 7,
-    "august": 8,
-    "september": 9,
-    "october": 10,
-    "november": 11,
-    "december": 12,
-}
-
-INTEREST_ALIASES = {
-    "hackathon": ["hackathon", "tech", "competition"],
-    "guest talk": ["guest talk", "talk", "career"],
-    "culturals": ["culturals", "cultural", "music", "drama"],
-    "workshop": ["workshop", "tech", "ai"],
-    "expo": ["expo", "career", "tech"],
-    "competition": ["competition", "hackathon", "sports"],
-    "career": ["career", "guest talk", "expo"],
-}
-
-
-def _load_env_once(force: bool = False) -> None:
-    global _ENV_LOADED
-    if _ENV_LOADED and not force:
-        return
-
-    agent_dir = Path(__file__).resolve().parent
-    backend_dir = agent_dir.parent
-    repo_dir = backend_dir.parent
-    candidates = [backend_dir / ".env", repo_dir / ".env"]
-
-    for env_path in candidates:
-        if not env_path.exists():
-            continue
-        try:
-            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-                line = raw_line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip().strip('"').strip("'")
-                if key and key not in os.environ:
-                    os.environ[key] = value
-        except Exception:
-            # Keep startup resilient even if .env parsing fails.
-            pass
-
-    _ENV_LOADED = True
-
-
-def _get_openrouter_api_key() -> str:
-    _load_env_once()
-    api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if api_key:
-        return api_key
-    # Retry once in case .env was added after process startup.
-    _load_env_once(force=True)
-    return os.getenv("OPENROUTER_API_KEY", "").strip()
-
-
-def _get_mistral_model() -> str:
-    _load_env_once()
-    return os.getenv("MISTRAL_MODEL", "mistralai/mistral-7b-instruct-v0.1")
-
-
-def _discover_openrouter_mistral_candidates(headers: Dict[str, str]) -> List[str]:
-    try:
-        response = requests.get(OPENROUTER_MODELS_URL, headers=headers, timeout=20)
-        if response.status_code >= 400:
-            return []
-
-        payload = response.json()
-        models = payload.get("data", []) if isinstance(payload, dict) else []
-        discovered = []
-        for model in models:
-            model_id = str(model.get("id", "")).strip()
-            model_id_lower = model_id.lower()
-            if "mistral" not in model_id_lower:
-                continue
-            # Prefer 7B-ish or instruct variants first.
-            if "7b" in model_id_lower or "instruct" in model_id_lower:
-                discovered.append(model_id)
-
-        return discovered
-    except Exception:
-        return []
-
-
-def _build_model_candidates() -> List[str]:
-    _load_env_once()
-    # Environment + static fallbacks are deterministic; dynamic discovery is added later.
-    models = [_get_mistral_model()]
-    env_candidates = os.getenv("OPENROUTER_MODEL_CANDIDATES", "")
-    if env_candidates.strip():
-        models.extend([m.strip() for m in env_candidates.split(",") if m.strip()])
-    models.extend(MISTRAL_MODEL_FALLBACKS)
-
-    deduped = []
-    for model in models:
-        if model not in deduped:
-            deduped.append(model)
-    return deduped
-
-
-def _generate_mistral_text(system_prompt: str, user_prompt: str, fallback: str) -> str:
-    openrouter_api_key = _get_openrouter_api_key()
-    if not openrouter_api_key:
-        print("OPENROUTER ERROR: OPENROUTER_API_KEY is missing")
-        return fallback
-
-    headers = {
-        "Authorization": f"Bearer {openrouter_api_key}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "http://localhost:8000",
-        "X-Title": "ai-scheduling-agent",
-    }
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-
-    try:
-        model_candidates = _build_model_candidates()
-        discovered_candidates = _discover_openrouter_mistral_candidates(headers)
-        if discovered_candidates:
-            print(f"OPENROUTER INFO: discovered {len(discovered_candidates)} mistral model ids")
-            model_candidates.extend(discovered_candidates)
-
-        deduped_candidates = []
-        for model in model_candidates:
-            if model not in deduped_candidates:
-                deduped_candidates.append(model)
-
-        for model_name in deduped_candidates:
-            payload = {
-                "model": model_name,
-                "messages": messages,
-                "temperature": 0.6,
-                "max_tokens": 180,
-            }
-            response = requests.post(OPENROUTER_API_URL, headers=headers, json=payload, timeout=45)
-
-            if response.status_code == 404:
-                print(f"OPENROUTER WARN: model unavailable -> {model_name} | {response.text[:220]}")
-                continue
-
-            if response.status_code >= 400:
-                print(f"OPENROUTER ERROR: model={model_name} HTTP {response.status_code} - {response.text[:300]}")
-                return fallback
-
-            data = response.json()
-            choices = data.get("choices", []) if isinstance(data, dict) else []
-
-            if choices:
-                message = choices[0].get("message", {})
-                text = (message.get("content") or "").strip()
-                if text:
-                    print(f"OPENROUTER INFO: using model {model_name}")
-                    return text
-
-            print(f"OPENROUTER WARN: empty response choices for model {model_name}")
-
-        print("OPENROUTER ERROR: No available model endpoints returned usable content")
-        return fallback
-
-    except Exception as e:
-        print("OPENROUTER ERROR:", e)
-        return fallback
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
 def generate_reply(
@@ -207,8 +16,6 @@ def generate_reply(
     context: Dict,
     fallback: str,
 ) -> str:
-    print("DEBUG: calling OpenRouter...")
-
     calendar_summary = (
         ", ".join(
             f"{e.get('title', 'Unnamed')} on {e.get('date', '?')} "
@@ -292,144 +99,23 @@ def generate_reply(
         f"Your task: {instruction}"
     )
 
+    full_prompt = f"{system_prompt}\n\n{user_prompt}"
+
     try:
-        return _generate_mistral_text(system_prompt, user_prompt, fallback)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=full_prompt,
+        )
+        text = response.text.strip()
+        return text if text else fallback
+
     except Exception as e:
-        print("OPENROUTER ERROR:", e)
+        print("GEMINI ERROR:", e)
         return fallback
 
 
 def time_overlap(start1, end1, start2, end2):
     return not (end1 <= start2 or end2 <= start1)
-
-
-def _split_time_range(time_range: str) -> Dict[str, str]:
-    if not time_range or "-" not in time_range:
-        return {"start_time": "09:00", "end_time": "10:00"}
-
-    start_time, end_time = time_range.split("-", 1)
-    return {
-        "start_time": start_time.strip() or "09:00",
-        "end_time": end_time.strip() or "10:00",
-    }
-
-
-def normalize_calendar_entries(calendar: List[Dict]) -> List[Dict]:
-    normalized = []
-    for entry in calendar:
-        if entry.get("start_time") and entry.get("end_time"):
-            normalized.append(entry)
-            continue
-
-        time_parts = _split_time_range(entry.get("time", ""))
-        normalized.append(
-            {
-                "title": entry.get("title", "Untitled"),
-                "date": entry.get("date"),
-                "start_time": time_parts["start_time"],
-                "end_time": time_parts["end_time"],
-                "type": entry.get("type", "personal"),
-            }
-        )
-    return normalized
-
-
-def _extract_personal_event_title(message: str) -> str:
-    title_patterns = [
-        r"(?:i have|i've got)\s+(?:(?:a|an)\s+)?(.+?)\s+(?:at|on)\s+",
-        r"(?:add|schedule|put)\s+(?:(?:a|an)\s+)?(.+?)\s+(?:at|on)\s+",
-        r"(?:add|schedule|put)\s+(.+?)\s+to my calendar",
-    ]
-
-    lowered = message.lower()
-    for pattern in title_patterns:
-        match = re.search(pattern, lowered, flags=re.IGNORECASE)
-        if match:
-            title = match.group(1).strip(" ,.")
-            return title.title()
-    return ""
-
-
-def _extract_date_time(message: str) -> Dict[str, str]:
-    lowered = message.lower()
-
-    date_match = re.search(
-        r"(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s*,?\s*(\d{4}))?",
-        lowered,
-        flags=re.IGNORECASE,
-    )
-    time_match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", lowered, flags=re.IGNORECASE)
-
-    if not date_match or not time_match:
-        return {}
-
-    day = int(date_match.group(1))
-    month = MONTH_NAME_TO_NUMBER[date_match.group(2).lower()]
-    year = int(date_match.group(3)) if date_match.group(3) else datetime.now().year
-
-    hour = int(time_match.group(1))
-    minute = int(time_match.group(2) or 0)
-    meridiem = time_match.group(3).lower()
-    if meridiem == "pm" and hour != 12:
-        hour += 12
-    if meridiem == "am" and hour == 12:
-        hour = 0
-
-    start_dt = datetime(year, month, day, hour, minute)
-    end_dt = start_dt + timedelta(hours=2)
-    return {
-        "date": start_dt.strftime("%Y-%m-%d"),
-        "start_time": start_dt.strftime("%H:%M"),
-        "end_time": end_dt.strftime("%H:%M"),
-    }
-
-
-def _extract_personal_event_request(user_id: str, message: str) -> Dict:
-    lowered = message.lower()
-    is_calendar_intent = any(term in lowered for term in ["calendar", "add", "schedule", "put"])
-    extracted = _extract_date_time(message)
-    draft = PERSONAL_EVENT_DRAFTS.get(user_id, {})
-    title = _extract_personal_event_title(message) or draft.get("title", "")
-
-    if title and extracted:
-        PERSONAL_EVENT_DRAFTS.pop(user_id, None)
-        return {
-            "title": title,
-            "date": extracted["date"],
-            "start_time": extracted["start_time"],
-            "end_time": extracted["end_time"],
-            "type": "personal",
-            "calendar_intent": is_calendar_intent,
-        }
-
-    if title and not extracted:
-        PERSONAL_EVENT_DRAFTS[user_id] = {"title": title}
-        return {"pending": True, "title": title, "calendar_intent": is_calendar_intent}
-
-    if draft and extracted:
-        PERSONAL_EVENT_DRAFTS.pop(user_id, None)
-        return {
-            "title": draft.get("title", "Personal Event"),
-            "date": extracted["date"],
-            "start_time": extracted["start_time"],
-            "end_time": extracted["end_time"],
-            "type": "personal",
-            "calendar_intent": True,
-        }
-
-    return {}
-
-
-def _store_pending_personal_event(user_id: str, event: Dict) -> None:
-    PENDING_PERSONAL_EVENTS[user_id] = event
-
-
-def _get_pending_personal_event(user_id: str) -> Dict:
-    return PENDING_PERSONAL_EVENTS.get(user_id, {})
-
-
-def _clear_pending_personal_event(user_id: str) -> None:
-    PENDING_PERSONAL_EVENTS.pop(user_id, None)
 
 
 def get_user_calendar(user_id: str) -> List[Dict]:
@@ -481,19 +167,15 @@ def score_event(event: Dict, calendar: List[Dict], profile: Dict) -> float:
 
     interests = [i.lower() for i in profile.get("interests", [])]
     tags = [t.lower() for t in event.get("tags", [])]
-    title_and_desc = (event.get("title", "") + " " + event.get("description", "")).lower()
 
     for interest in interests:
-        aliases = INTEREST_ALIASES.get(interest, [interest])
-        if any(alias in tags for alias in aliases):
+        if interest in tags:
             score += 2
-        if any(alias in title_and_desc for alias in aliases):
-            score += 1.5
 
     goals = [g.lower() for g in profile.get("career_goals", [])]
+    title_and_desc = (event.get("title", "") + " " + event.get("description", "")).lower()
     for goal in goals:
-        aliases = INTEREST_ALIASES.get(goal, [goal])
-        if any(alias in title_and_desc for alias in aliases):
+        if goal in title_and_desc:
             score += 1.5
 
     if "tech" in tags:
@@ -519,51 +201,14 @@ def simple_agent(
     """Main agent logic. Returns dict matching ChatResponse format."""
     message = user_message.lower()
     profile = get_user_profile(user_id)
-    calendar = normalize_calendar_entries(calendar)
-
-    personal_event = _extract_personal_event_request(user_id, user_message)
-    if personal_event.get("pending"):
-        fallback = f"I have the title '{personal_event.get('title')}'. What exact date and time should I put on your calendar?"
-        return {
-            "reply": fallback,
-            "action": "clarify",
-            "recommended_event": None,
-        }
-
-    if personal_event.get("title") and personal_event.get("date"):
-        _store_pending_personal_event(user_id, personal_event)
-        fallback = f"Added '{personal_event['title']}' to your calendar for {personal_event['date']} at {personal_event['start_time']}."
-        if not personal_event.get("calendar_intent") or any(term in message for term in ["conflict", "clash", "check"]):
-            fallback = (
-                f"I noted your {personal_event['title']} on {personal_event['date']} at {personal_event['start_time']}. "
-                "I can check for conflicts or add it to your calendar."
-            )
-            return {
-                "reply": fallback,
-                "action": "clarify",
-                "recommended_event": None,
-            }
-        return {
-            "reply": generate_reply(
-                action="add_to_calendar",
-                user_message=user_message,
-                recommendations=[],
-                calendar=calendar,
-                context={"event_title": personal_event.get("title")},
-                fallback=fallback,
-            ),
-            "action": "add_to_calendar",
-            "event_to_add": personal_event,
-        }
 
     # ── Confirmation branch ──────────────────────────────────────────────────
-    confirmation_match = re.match(r"^(yes|confirm)\s+(\d+)\b", message)
-    if confirmation_match:
-        event_id = confirmation_match.group(2)
-        if event_id:
+    if message.startswith("yes ") or message.startswith("confirm "):
+        parts = message.split()
+        if len(parts) >= 2:
+            event_id = parts[1]
             for ev in events:
                 if str(ev.get("id")) == event_id:
-                    _clear_pending_personal_event(user_id)
                     fallback = "Adding event to your calendar..."
                     return {
                         "reply": generate_reply(
@@ -593,54 +238,6 @@ def simple_agent(
             ),
             "action": "clarify",
             "recommended_event": None,
-        }
-
-    pending_personal_event = _get_pending_personal_event(user_id)
-    if pending_personal_event and any(term in message for term in ["conflict", "clash", "check"]):
-        calendar_with_pending_event = [*calendar, pending_personal_event]
-        scored = []
-        for event in events:
-            score = score_event(event, calendar_with_pending_event, profile)
-            scored.append((score, event))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        top_events = scored[:3]
-
-        recommendations = []
-        for score, ev in top_events:
-            has_conflict = False
-            for entry in calendar_with_pending_event:
-                if ev.get("date") == entry.get("date") and time_overlap(
-                    ev.get("start_time"), ev.get("end_time"),
-                    entry.get("start_time"), entry.get("end_time"),
-                ):
-                    has_conflict = True
-                    break
-            recommendations.append(
-                {
-                    "event": ev,
-                    "score": score,
-                    "reason": "Potential conflict" if has_conflict else "No schedule conflicts",
-                }
-            )
-
-        fallback = (
-            f"I checked conflicts against your {pending_personal_event['title']} on {pending_personal_event['date']} at {pending_personal_event['start_time']}. "
-            "These are the safest options."
-        )
-        return {
-            "reply": generate_reply(
-                action="recommend_multiple",
-                user_message=user_message,
-                recommendations=recommendations,
-                calendar=calendar_with_pending_event,
-                context={},
-                fallback=fallback,
-            ),
-            "action": "recommend_multiple",
-            "recommendations": recommendations,
-            "requires_confirmation": True,
-            "confirmation_token": recommendations[0]["event"].get("id") if recommendations else None,
         }
 
     # ── Schedule summary branch ──────────────────────────────────────────────

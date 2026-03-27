@@ -1,12 +1,19 @@
 from fastapi import FastAPI
-from backend.routes.calendar import router as calendar_router
+
+from routes import events, chat, profile, calendar
+from db.database import seed_events
+
 
 app = FastAPI()
 
-# Root check
-@app.get("/")
-def home():
-    return {"message": "Server is running"}
+app.include_router(events.router)
+app.include_router(chat.router)
+app.include_router(profile.router)
+app.include_router(calendar.router)
 
-# Include your calendar module
-app.include_router(calendar_router)
+seed_events()
+
+
+@app.get("/")
+def root():
+    return {"message": "Backend is running"}

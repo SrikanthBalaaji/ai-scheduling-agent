@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from agent.agent import simple_agent
+from agent.graph import invoke_graph
 from routes.events import get_events
-from routes.calendar import get_calendar, calendar_storage
+from routes.calendar import get_calendar
 
 router = APIRouter()
 
@@ -12,18 +12,25 @@ class ChatRequest(BaseModel):
 
 @router.post("/chat")
 def chat(request: ChatRequest):
+    """
+    Chat endpoint orchestrated by LangGraph.
+    
+    Graph handles:
+    - Decision logic (simple_agent)
+    - Side effects (calendar writes in action_node only)
+    - Response normalization (response_node)
+    
+    Route no longer mutates calendar directly; graph manages all state transitions.
+    """
     events = [e.dict() for e in get_events()]
     calendar = get_calendar(request.user_id)
-    response = simple_agent(request.user_id, request.message, events, calendar)
     
-    if response.get("action") == "add_to_calendar":
-        event_to_add = response.get("event_to_add")
-        if request.user_id not in calendar_storage:
-            calendar_storage[request.user_id] = []
-        calendar_storage[request.user_id].append({
-            "title": event_to_add.get("title"),
-            "time": f"{event_to_add.get('start_time')}-{event_to_add.get('end_time')}"
-        })
-        response["reply"] = f"Event '{event_to_add.get('title')}' added to your calendar!"
+    # Graph invocation: inject state, orchestrate nodes, return final_response
+    response = invoke_graph(
+        user_id=request.user_id,
+        message=request.message,
+        events=events,
+        calendar=calendar
+    )
     
     return response
