@@ -9,13 +9,14 @@ calendar_entries = []
 
 # 🔹 Add event
 @router.post("/calendar")
-def add_calendar_entry(user_id: int, title: str, time: str, duration: int):
+def add_calendar_entry(user_id: int, title: str, time: str, duration: int, priority: int = 3):
     entry = {
         "id": len(calendar_entries) + 1,
         "user_id": user_id,
         "title": title,
         "time": time,
-        "duration": duration
+        "duration": duration,
+        "priority": priority
     }
     calendar_entries.append(entry)
     return entry
@@ -86,7 +87,7 @@ def decision(user_id: int, time: str, duration: int):
 
             overlap_start = max(new_start, existing_start)
             overlap_end = min(new_end, existing_end)
-            overlap_duration = (overlap_end - overlap_start).total_seconds / 3600
+            overlap_duration = (overlap_end - overlap_start).total_seconds() / 3600
 
             if overlap_duration < duration:
                 suggestions.append(
