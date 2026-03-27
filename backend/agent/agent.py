@@ -3,6 +3,7 @@ from typing import List, Dict
 from pathlib import Path
 from datetime import datetime, timedelta
 import re
+import time
 
 import requests
 
@@ -10,6 +11,8 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 
 _ENV_LOADED = False
+_DISCOVERED_MODELS_CACHE: List[str] = []
+_DISCOVERED_MODELS_CACHE_TS = 0.0
 
 MISTRAL_MODEL_FALLBACKS = [
     "mistralai/mistral-7b-instruct-v0.1",
@@ -20,6 +23,12 @@ MISTRAL_MODEL_FALLBACKS = [
     "mistralai/mistral-nemo:free",
     "mistralai/mistral-small-3.2-24b-instruct:free",
 ]
+
+DEFAULT_OPENROUTER_DISCOVERY_TIMEOUT_SECONDS = 4
+DEFAULT_OPENROUTER_REQUEST_TIMEOUT_SECONDS = 12
+DEFAULT_OPENROUTER_MAX_MODEL_ATTEMPTS = 2
+DEFAULT_DISCOVERY_CACHE_TTL_SECONDS = 600
+DEFAULT_PROFILE_REQUEST_TIMEOUT_SECONDS = 2
 
 PERSONAL_EVENT_DRAFTS: Dict[str, Dict] = {}
 PENDING_PERSONAL_EVENTS: Dict[str, Dict] = {}
@@ -94,9 +103,37 @@ def _get_mistral_model() -> str:
     return os.getenv("MISTRAL_MODEL", "mistralai/mistral-7b-instruct-v0.1")
 
 
-def _discover_openrouter_mistral_candidates(headers: Dict[str, str]) -> List[str]:
+def _get_env_int(name: str, default: int) -> int:
+    _load_env_once()
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
     try:
-        response = requests.get(OPENROUTER_MODELS_URL, headers=headers, timeout=20)
+        value = int(raw)
+        return value if value > 0 else default
+    except Exception:
+        return default
+
+
+def _is_discovery_enabled() -> bool:
+    _load_env_once()
+    raw = os.getenv("OPENROUTER_ENABLE_MODEL_DISCOVERY", "false").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _discover_openrouter_mistral_candidates(headers: Dict[str, str]) -> List[str]:
+    global _DISCOVERED_MODELS_CACHE_TS, _DISCOVERED_MODELS_CACHE
+    cache_ttl = _get_env_int("OPENROUTER_DISCOVERY_CACHE_TTL_SECONDS", DEFAULT_DISCOVERY_CACHE_TTL_SECONDS)
+    if _DISCOVERED_MODELS_CACHE and (time.time() - _DISCOVERED_MODELS_CACHE_TS) < cache_ttl:
+        return _DISCOVERED_MODELS_CACHE
+
+    discovery_timeout = _get_env_int(
+        "OPENROUTER_DISCOVERY_TIMEOUT_SECONDS",
+        DEFAULT_OPENROUTER_DISCOVERY_TIMEOUT_SECONDS,
+    )
+
+    try:
+        response = requests.get(OPENROUTER_MODELS_URL, headers=headers, timeout=discovery_timeout)
         if response.status_code >= 400:
             return []
 
@@ -112,6 +149,8 @@ def _discover_openrouter_mistral_candidates(headers: Dict[str, str]) -> List[str
             if "7b" in model_id_lower or "instruct" in model_id_lower:
                 discovered.append(model_id)
 
+        _DISCOVERED_MODELS_CACHE = discovered
+        _DISCOVERED_MODELS_CACHE_TS = time.time()
         return discovered
     except Exception:
         return []
@@ -152,24 +191,42 @@ def _generate_mistral_text(system_prompt: str, user_prompt: str, fallback: str) 
 
     try:
         model_candidates = _build_model_candidates()
-        discovered_candidates = _discover_openrouter_mistral_candidates(headers)
-        if discovered_candidates:
-            print(f"OPENROUTER INFO: discovered {len(discovered_candidates)} mistral model ids")
-            model_candidates.extend(discovered_candidates)
+        if _is_discovery_enabled():
+            discovered_candidates = _discover_openrouter_mistral_candidates(headers)
+            if discovered_candidates:
+                print(f"OPENROUTER INFO: discovered {len(discovered_candidates)} mistral model ids")
+                model_candidates.extend(discovered_candidates)
 
         deduped_candidates = []
         for model in model_candidates:
             if model not in deduped_candidates:
                 deduped_candidates.append(model)
 
+        max_attempts = _get_env_int("OPENROUTER_MAX_MODEL_ATTEMPTS", DEFAULT_OPENROUTER_MAX_MODEL_ATTEMPTS)
+        request_timeout = _get_env_int(
+            "OPENROUTER_REQUEST_TIMEOUT_SECONDS",
+            DEFAULT_OPENROUTER_REQUEST_TIMEOUT_SECONDS,
+        )
+
+        tried = 0
+
         for model_name in deduped_candidates:
+            if tried >= max_attempts:
+                break
+            tried += 1
+
             payload = {
                 "model": model_name,
                 "messages": messages,
                 "temperature": 0.6,
                 "max_tokens": 180,
             }
-            response = requests.post(OPENROUTER_API_URL, headers=headers, json=payload, timeout=45)
+            response = requests.post(
+                OPENROUTER_API_URL,
+                headers=headers,
+                json=payload,
+                timeout=request_timeout,
+            )
 
             if response.status_code == 404:
                 print(f"OPENROUTER WARN: model unavailable -> {model_name} | {response.text[:220]}")
@@ -335,6 +392,9 @@ def normalize_calendar_entries(calendar: List[Dict]) -> List[Dict]:
 
 
 def _extract_personal_event_title(message: str) -> str:
+    # Words that should not be treated as event titles
+    stop_words = {"it", "that", "this", "them", "these", "those", "what", "which"}
+    
     title_patterns = [
         r"(?:i have|i've got)\s+(?:(?:a|an)\s+)?(.+?)\s+(?:at|on)\s+",
         r"(?:add|schedule|put)\s+(?:(?:a|an)\s+)?(.+?)\s+(?:at|on)\s+",
@@ -346,26 +406,38 @@ def _extract_personal_event_title(message: str) -> str:
         match = re.search(pattern, lowered, flags=re.IGNORECASE)
         if match:
             title = match.group(1).strip(" ,.")
-            return title.title()
+            # Don't use single stop words as titles
+            if title.lower() not in stop_words:
+                return title.title()
     return ""
 
 
 def _extract_date_time(message: str) -> Dict[str, str]:
     lowered = message.lower()
 
-    date_match = re.search(
+    day_first_match = re.search(
         r"(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s*,?\s*(\d{4}))?",
+        lowered,
+        flags=re.IGNORECASE,
+    )
+    month_first_match = re.search(
+        r"(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?",
         lowered,
         flags=re.IGNORECASE,
     )
     time_match = re.search(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)", lowered, flags=re.IGNORECASE)
 
-    if not date_match or not time_match:
+    if not time_match or (not day_first_match and not month_first_match):
         return {}
 
-    day = int(date_match.group(1))
-    month = MONTH_NAME_TO_NUMBER[date_match.group(2).lower()]
-    year = int(date_match.group(3)) if date_match.group(3) else datetime.now().year
+    if day_first_match:
+        day = int(day_first_match.group(1))
+        month = MONTH_NAME_TO_NUMBER[day_first_match.group(2).lower()]
+        year = int(day_first_match.group(3)) if day_first_match.group(3) else datetime.now().year
+    else:
+        month = MONTH_NAME_TO_NUMBER[month_first_match.group(1).lower()]
+        day = int(month_first_match.group(2))
+        year = int(month_first_match.group(3)) if month_first_match.group(3) else datetime.now().year
 
     hour = int(time_match.group(1))
     minute = int(time_match.group(2) or 0)
@@ -375,7 +447,10 @@ def _extract_date_time(message: str) -> Dict[str, str]:
     if meridiem == "am" and hour == 12:
         hour = 0
 
-    start_dt = datetime(year, month, day, hour, minute)
+    try:
+        start_dt = datetime(year, month, day, hour, minute)
+    except ValueError:
+        return {}
     end_dt = start_dt + timedelta(hours=2)
     return {
         "date": start_dt.strftime("%Y-%m-%d"),
@@ -389,7 +464,10 @@ def _extract_personal_event_request(user_id: str, message: str) -> Dict:
     is_calendar_intent = any(term in lowered for term in ["calendar", "add", "schedule", "put"])
     extracted = _extract_date_time(message)
     draft = PERSONAL_EVENT_DRAFTS.get(user_id, {})
-    title = _extract_personal_event_title(message) or draft.get("title", "")
+    title_from_message = _extract_personal_event_title(message)
+    title = title_from_message or draft.get("title", "")
+    inherited_calendar_intent = bool(draft.get("calendar_intent", False))
+    calendar_intent = is_calendar_intent or inherited_calendar_intent
 
     if title and extracted:
         PERSONAL_EVENT_DRAFTS.pop(user_id, None)
@@ -399,11 +477,15 @@ def _extract_personal_event_request(user_id: str, message: str) -> Dict:
             "start_time": extracted["start_time"],
             "end_time": extracted["end_time"],
             "type": "personal",
-            "calendar_intent": is_calendar_intent,
+            "calendar_intent": calendar_intent,
         }
 
+    # Only create a new draft if we have a valid title (not empty)
     if title and not extracted:
-        PERSONAL_EVENT_DRAFTS[user_id] = {"title": title}
+        PERSONAL_EVENT_DRAFTS[user_id] = {
+            "title": title,
+            "calendar_intent": calendar_intent,
+        }
         return {"pending": True, "title": title, "calendar_intent": is_calendar_intent}
 
     if draft and extracted:
@@ -452,8 +534,12 @@ def get_user_calendar(user_id: str) -> List[Dict]:
 
 def get_user_profile(user_id: str) -> Dict:
     """Fetch profile from our own API."""
+    _load_env_once()
+    profile_base_url = os.getenv("PROFILE_API_BASE_URL", "http://127.0.0.1:8000").strip().rstrip("/")
+    profile_timeout = _get_env_int("PROFILE_API_TIMEOUT_SECONDS", DEFAULT_PROFILE_REQUEST_TIMEOUT_SECONDS)
+
     try:
-        resp = requests.get(f"http://localhost:8000/profile/{user_id}")
+        resp = requests.get(f"{profile_base_url}/profile/{user_id}", timeout=profile_timeout)
         if resp.status_code == 200:
             return resp.json()
     except Exception:
@@ -520,6 +606,33 @@ def simple_agent(
     message = user_message.lower()
     profile = get_user_profile(user_id)
     calendar = normalize_calendar_entries(calendar)
+
+    # If a personal event is already pending and user repeats a date/time,
+    # treat it as confirmation data instead of re-entering clarification loops.
+    pending_personal_event = _get_pending_personal_event(user_id)
+    repeated_datetime = _extract_date_time(user_message)
+    if pending_personal_event and repeated_datetime and not _extract_personal_event_title(user_message):
+        merged_event = {
+            **pending_personal_event,
+            "date": repeated_datetime["date"],
+            "start_time": repeated_datetime["start_time"],
+            "end_time": repeated_datetime["end_time"],
+            "calendar_intent": True,
+        }
+        _clear_pending_personal_event(user_id)
+        fallback = f"Added '{merged_event['title']}' to your calendar for {merged_event['date']} at {merged_event['start_time']}."
+        return {
+            "reply": generate_reply(
+                action="add_to_calendar",
+                user_message=user_message,
+                recommendations=[],
+                calendar=calendar,
+                context={"event_title": merged_event.get("title")},
+                fallback=fallback,
+            ),
+            "action": "add_to_calendar",
+            "event_to_add": merged_event,
+        }
 
     personal_event = _extract_personal_event_request(user_id, user_message)
     if personal_event.get("pending"):
@@ -593,6 +706,28 @@ def simple_agent(
             ),
             "action": "clarify",
             "recommended_event": None,
+        }
+
+    # ── Check if user is confirming a pending personal event ─────────────────
+    pending_personal_event = _get_pending_personal_event(user_id)
+    confirmation_keywords = ["add", "yes", "okay", "ok", "sure", "please", "go", "confirm"]
+    is_confirming_event = any(keyword in message for keyword in confirmation_keywords)
+    
+    if pending_personal_event and is_confirming_event and not any(term in message for term in ["conflict", "clash", "check"]):
+        # User is confirming the pending personal event - add it
+        _clear_pending_personal_event(user_id)
+        fallback = f"Added '{pending_personal_event['title']}' to your calendar for {pending_personal_event['date']} at {pending_personal_event['start_time']}."
+        return {
+            "reply": generate_reply(
+                action="add_to_calendar",
+                user_message=user_message,
+                recommendations=[],
+                calendar=calendar,
+                context={"event_title": pending_personal_event.get("title")},
+                fallback=fallback,
+            ),
+            "action": "add_to_calendar",
+            "event_to_add": pending_personal_event,
         }
 
     pending_personal_event = _get_pending_personal_event(user_id)
