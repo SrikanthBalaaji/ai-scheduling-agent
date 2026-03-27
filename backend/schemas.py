@@ -8,3 +8,4 @@ class Event(BaseModel):
     start_time: str
     end_time: str
     tags: List[str]
+    campus: str   

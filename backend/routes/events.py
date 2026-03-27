@@ -23,12 +23,13 @@ def get_events(date: str = None, tag: str = None):
 
     return [
         Event(
-            id=r[0],
-            title=r[1],
-            date=r[2],
-            start_time=r[3],
-            end_time=r[4],
-            tags=r[5].split(",")
-        )
+         id=r[0],
+         title=r[1],
+         date=r[2],
+         start_time=r[3],
+         end_time=r[4],
+         tags=r[5].split(","),
+         campus=r[6]   
+)
         for r in rows
     ]
