@@ -10,6 +10,7 @@ const api = axios.create({
 let eventsStore = [...mockEvents]
 let calendarStore = [...academicCalendarSeed]
 let registrationMap = {}
+let registrationDetailsStore = {}
 
 const sleep = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -48,7 +49,7 @@ export const eventsApi = {
         return { data: { success: true }, status: 200, request: api.defaults }
     },
 
-    async register(eventId, userId) {
+    async register(eventId, userId, formPayload = {}) {
         await sleep()
         const targetEvent = eventsStore.find((event) => event.id === eventId)
         if (!targetEvent) {
@@ -59,6 +60,12 @@ export const eventsApi = {
         if (!registrationMap[userId].has(eventId)) {
             registrationMap[userId].add(eventId)
             targetEvent.registrations += 1
+            registrationDetailsStore[eventId] = registrationDetailsStore[eventId] || []
+            registrationDetailsStore[eventId].push({
+                userId,
+                submittedAt: new Date().toISOString(),
+                formPayload,
+            })
 
             calendarStore.push({
                 id: `cal-${Date.now()}`,
@@ -71,7 +78,15 @@ export const eventsApi = {
             })
         }
 
-        return { data: { success: true, event: targetEvent }, status: 200, request: api.defaults }
+        return {
+            data: {
+                success: true,
+                event: targetEvent,
+                registration: registrationDetailsStore[eventId]?.find((item) => item.userId === userId),
+            },
+            status: 200,
+            request: api.defaults,
+        }
     },
 
     async getCalendar() {

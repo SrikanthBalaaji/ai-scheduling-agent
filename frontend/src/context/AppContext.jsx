@@ -96,10 +96,10 @@ export const AppProvider = ({ children }) => {
         setRegisteredEventIds(new Set())
     }
 
-    const registerForEvent = async (eventId) => {
+    const registerForEvent = async (eventId, formPayload = {}) => {
         if (!user) return { success: false }
 
-        await eventsApi.register(eventId, user.id)
+        await eventsApi.register(eventId, user.id, formPayload)
         setRegisteredEventIds((prev) => new Set([...prev, eventId]))
         await refreshData()
         return { success: true }

@@ -138,12 +138,15 @@ html.dark .shadow-2xl {
 
 .login-submit {
   background: linear-gradient(135deg, #fcd34d, #fbbf24);
-  color: #111827;
-  box-shadow: 0 8px 18px rgba(251, 191, 36, 0.26);
+  color: #000000;
+  box-shadow: 0 8px 24px rgba(251, 191, 36, 0.35), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  font-weight: 700;
+  letter-spacing: 0.025em;
 }
 
 .login-submit:hover {
   background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 12px 32px rgba(251, 191, 36, 0.4), 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
 .role-switch {
@@ -328,6 +331,66 @@ html.dark .calendar-freetime-item {
   isolation: isolate;
 }
 
+.filter-bar {
+  border-color: #dbe3ee;
+  background: linear-gradient(135deg, #ffffff 0%, #fef3c7 100%);
+}
+
+.filter-label>span {
+  color: #64748b;
+}
+
+.filter-field {
+  color: #0f172a;
+  border-color: #cbd5e1;
+  background-color: rgba(255, 255, 255, 0.92);
+}
+
+.filter-leading-icon {
+  color: #64748b;
+}
+
+.filter-trailing-icon {
+  color: #475569;
+}
+
+html.dark .filter-bar {
+  border-color: #334155 !important;
+  background: linear-gradient(135deg, #182235 0%, #121926 100%) !important;
+}
+
+html.dark .filter-label {
+  color: #e2e8f0 !important;
+}
+
+html.dark .filter-label>span {
+  color: #94a3b8 !important;
+}
+
+html.dark .filter-field {
+  color: #f1f5f9 !important;
+  border-color: #3a4b61 !important;
+  background-color: #0f1726 !important;
+}
+
+html.dark .filter-field:focus {
+  border-color: #fbbf24 !important;
+  --tw-ring-color: rgba(251, 191, 36, 0.26) !important;
+}
+
+html.dark .filter-leading-icon {
+  color: #94a3b8 !important;
+}
+
+html.dark .filter-trailing-icon {
+  color: #cbd5e1 !important;
+}
+
+html.dark .filter-field[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(0.9);
+  opacity: 0.95;
+}
+
 .event-card::after {
   content: '';
   position: absolute;
@@ -370,4 +433,332 @@ html.dark .event-card:hover {
   to {
     transform: translateX(70%) rotate(9deg);
   }
+}
+
+/* Animated Navigation Container */
+.animated-nav-container {
+  position: relative;
+  display: inline-flex;
+  gap: 0;
+  background-color: #f1f5f9;
+  border-radius: 9999px;
+  padding: 0.25rem;
+}
+
+.animated-nav-bubble {
+  position: absolute;
+  background: linear-gradient(135deg, #fcd34d, #fbbf24);
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+  border-radius: 9999px;
+  z-index: 0;
+  will-change: transform;
+}
+
+.animated-nav-item {
+  position: relative;
+  z-index: 10;
+  border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.animated-nav-item:hover {
+  color: #1e293b;
+}
+
+.animated-nav-item[aria-current="page"] {
+  color: #000000 !important;
+}
+
+/* Animated View Switcher Container */
+.animated-switcher-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  background-color: #f1f5f9;
+  border-radius: 9999px;
+  padding: 0.25rem;
+}
+
+.animated-switcher-bubble {
+  position: absolute;
+  background: linear-gradient(135deg, #fcd34d, #fbbf24);
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.3);
+  border-radius: 9999px;
+  z-index: 0;
+  will-change: transform;
+}
+
+.animated-switcher-item {
+  position: relative;
+  z-index: 10;
+  border-radius: 9999px;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #475569;
+  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  white-space: nowrap;
+  background: none;
+  border: none;
+}
+
+.animated-switcher-item:hover {
+  color: #1e293b;
+}
+
+.animated-switcher-item[data-active="true"] {
+  color: #000000 !important;
+}
+
+/* Dark mode styles for animated components */
+html.dark .animated-nav-container {
+  background-color: #1e293b;
+}
+
+html.dark .animated-nav-bubble {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.25);
+}
+
+html.dark .animated-nav-item {
+  color: #cbd5e1;
+}
+
+html.dark .animated-nav-item:hover {
+  color: #f1f5f9;
+}
+
+html.dark .animated-nav-item[aria-current="page"] {
+  color: #000000 !important;
+}
+
+html.dark .animated-switcher-container {
+  background-color: #1e293b;
+}
+
+html.dark .animated-switcher-bubble {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 4px 12px rgba(251, 191, 36, 0.25);
+}
+
+html.dark .animated-switcher-item {
+  color: #cbd5e1;
+}
+
+html.dark .animated-switcher-item:hover {
+  color: #f1f5f9;
+}
+
+html.dark .animated-switcher-item[data-active="true"] {
+  color: #000000 !important;
+}
+
+/* Animated Role Switcher Container */
+.animated-role-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  border-radius: 9999px;
+  border: 1px solid #fcd34d;
+  background-color: #fef3c7;
+  padding: 0.25rem;
+}
+
+.animated-role-bubble {
+  position: absolute;
+  background: linear-gradient(135deg, #fcd34d, #fbbf24);
+  box-shadow: 0 6px 16px rgba(251, 191, 36, 0.35);
+  border-radius: 9999px;
+  z-index: 0;
+  will-change: transform;
+}
+
+.animated-role-item {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 9999px;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #7c5a2a;
+  transition: all 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
+  white-space: nowrap;
+  background: none;
+  border: none;
+}
+
+.animated-role-item:hover {
+  color: #5b3f1a;
+}
+
+/* Dark mode styles for animated role switcher */
+html.dark .animated-role-container {
+  border-color: #a16207;
+  background-color: rgba(24, 19, 12, 0.76);
+}
+
+html.dark .animated-role-bubble {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 6px 16px rgba(251, 191, 36, 0.28);
+}
+
+html.dark .animated-role-item {
+  color: #f5d59a;
+}
+
+html.dark .animated-role-item:hover {
+  color: #fde68a;
+}
+
+/* Custom Dropdown Styling */
+.custom-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.custom-dropdown-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.625rem 1rem 0.625rem 2.5rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  background-color: rgba(255, 255, 255, 0.9);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #1e293b;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  transition: all 200ms ease;
+  cursor: pointer;
+}
+
+.custom-dropdown-trigger:hover {
+  border-color: #94a3b8;
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.08);
+}
+
+.custom-dropdown-trigger:focus {
+  outline: none;
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.2), 0 2px 4px rgba(15, 23, 42, 0.08);
+}
+
+.custom-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  right: 0;
+  z-index: 50;
+  border-radius: 0.75rem;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.12), 0 2px 8px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+  animation: dropdownOpen 200ms cubic-bezier(0, 0.85, 1, 1) forwards;
+}
+
+@keyframes dropdownOpen {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.custom-dropdown-menu ul {
+  list-style: none;
+  padding: 0.5rem 0;
+  margin: 0;
+}
+
+.custom-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 0.625rem 1rem;
+  text-align: left;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #475569;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.custom-dropdown-item:hover {
+  background-color: #f1f5f9;
+  color: #1e293b;
+}
+
+.custom-dropdown-item[aria-selected="true"] {
+  background: linear-gradient(135deg, #fcd34d, #fbbf24);
+  color: #111827;
+  font-weight: 600;
+}
+
+.custom-dropdown-item[aria-selected="true"]:hover {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+}
+
+/* Dark mode styles for custom dropdown */
+html.dark .custom-dropdown-trigger {
+  border-color: rgba(55, 65, 82, 0.8);
+  background-color: rgba(15, 23, 38, 0.9);
+  color: #f1f5f9;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+html.dark .custom-dropdown-trigger:hover {
+  border-color: #64748b;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .custom-dropdown-trigger:focus {
+  border-color: #fbbf24;
+  box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.15), 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+html.dark .custom-dropdown-menu {
+  border-color: #334155;
+  background-color: #1e293b;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+html.dark .custom-dropdown-item {
+  color: #cbd5e1;
+}
+
+html.dark .custom-dropdown-item:hover {
+  background-color: #334155;
+  color: #f1f5f9;
+}
+
+html.dark .custom-dropdown-item[aria-selected="true"] {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  color: #111827;
+}
+
+html.dark .custom-dropdown-item[aria-selected="true"]:hover {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #000000;
 }

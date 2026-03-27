@@ -55,7 +55,7 @@ export const EventCard = ({ event, onRegister, isRegistered, canRegister = true 
 
                 <button
                     disabled={!canRegister || isPastDeadline || isRegistered}
-                    onClick={() => onRegister(event.id)}
+                    onClick={() => onRegister(event)}
                     className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                     {isRegistered ? 'Registered' : isPastDeadline ? 'Deadline Closed' : 'Register'}

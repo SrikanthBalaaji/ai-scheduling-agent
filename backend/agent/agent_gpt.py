@@ -2,10 +2,17 @@ import os
 from typing import List, Dict
 
 import requests
-from google import genai
-import os
+from openai import OpenAI
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+_openai_client = None
+
+def _get_openai_client():
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key:
+            _openai_client = OpenAI(api_key=api_key)
+    return _openai_client
 
 
 def generate_reply(
@@ -16,6 +23,26 @@ def generate_reply(
     context: Dict,
     fallback: str,
 ) -> str:
+    """
+    Generate a natural language reply using GPT-4o-mini.
+    Falls back to the rule-based reply string if OpenAI is unavailable or fails.
+
+    Args:
+        action:          The resolved action label (e.g. "recommend_multiple").
+        user_message:    The original message from the student.
+        recommendations: List of {event, score, reason} dicts (may be empty).
+        calendar:        The student's current calendar entries.
+        context:         Extra action-specific data (event titles, conflict info, etc.).
+        fallback:        The original hardcoded reply string — always returned on error.
+
+    Returns:
+        A natural language string for the "reply" field.
+    """
+    client = _get_openai_client()
+    print("OPENAI CLIENT:", client)
+    if client is None:
+        return fallback
+
     calendar_summary = (
         ", ".join(
             f"{e.get('title', 'Unnamed')} on {e.get('date', '?')} "
@@ -99,18 +126,20 @@ def generate_reply(
         f"Your task: {instruction}"
     )
 
-    full_prompt = f"{system_prompt}\n\n{user_prompt}"
-
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=full_prompt,
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=120,
+            temperature=0.7,
         )
-        text = response.text.strip()
+        text = response.choices[0].message.content.strip()
         return text if text else fallback
-
     except Exception as e:
-        print("GEMINI ERROR:", e)
+        print("OPENAI ERROR:", e)
         return fallback
 
 

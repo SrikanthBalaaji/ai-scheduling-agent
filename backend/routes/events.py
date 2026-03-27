@@ -23,6 +23,7 @@ def get_events(date: str = None, tag: str = None):
 
     return [
         Event(
+<<<<<<< HEAD
          id=r[0],
          title=r[1],
          date=r[2],
@@ -31,5 +32,15 @@ def get_events(date: str = None, tag: str = None):
          tags=r[5].split(","),
          campus=r[6]   
 )
+=======
+            id=r[0],
+            title=r[1],
+            date=r[2],
+            start_time=r[3],
+            end_time=r[4],
+            tags=r[5].split(","),
+            description=r[6] if len(r) > 6 else ""
+        )
+>>>>>>> ba35360c5630c80437f2f553e344ad4e1beedea2
         for r in rows
     ]
