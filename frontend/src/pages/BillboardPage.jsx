@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react'
 import { EventCard } from '../components/EventCard'
 import { FilterBar } from '../components/FilterBar'
 import { NotificationTray } from '../components/NotificationTray'
-import { RegistrationFormModal } from '../components/RegistrationFormModal'
 import { useAppContext } from '../context/AppContext'
 
 const isFutureEvent = (event) => new Date(event.dateTime).getTime() >= Date.now()
@@ -15,9 +14,8 @@ const passPopularity = (event, popularity) => {
 }
 
 export const BillboardPage = () => {
-    const { events, user, registerForEvent, registeredEventIds, role } = useAppContext()
+    const { events, user, registeredEventIds, role } = useAppContext()
     const [confirmation, setConfirmation] = useState('')
-    const [selectedEvent, setSelectedEvent] = useState(null)
     const [filters, setFilters] = useState({
         type: 'all',
         date: '',
@@ -61,17 +59,15 @@ export const BillboardPage = () => {
     const trending = useMemo(() => filtered.slice(0, 4), [filtered])
 
     const handleRegisterClick = (event) => {
-        setSelectedEvent(event)
-    }
-
-    const handleRegisterSubmit = async (payload) => {
-        if (!selectedEvent) return
-        const response = await registerForEvent(selectedEvent.id, payload)
-        if (response.success) {
-            setConfirmation('Registration confirmed. Added to your calendar.')
+        if (!event.googleFormUrl) {
+            setConfirmation('Google Form link is not available for this event yet.')
             setTimeout(() => setConfirmation(''), 2500)
-            setSelectedEvent(null)
+            return
         }
+
+        window.open(event.googleFormUrl, '_blank', 'noopener,noreferrer')
+        setConfirmation('Opening registration form in a new tab.')
+        setTimeout(() => setConfirmation(''), 2500)
     }
 
     return (
@@ -142,13 +138,6 @@ export const BillboardPage = () => {
                     ))}
                 </div>
             </section>
-
-            <RegistrationFormModal
-                isOpen={Boolean(selectedEvent)}
-                event={selectedEvent}
-                onClose={() => setSelectedEvent(null)}
-                onSubmit={handleRegisterSubmit}
-            />
         </main>
     )
 }

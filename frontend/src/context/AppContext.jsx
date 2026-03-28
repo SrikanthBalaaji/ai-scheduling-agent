@@ -122,12 +122,13 @@ export const AppProvider = ({ children }) => {
     }
 
     const duplicateClubEvent = async (event) => {
+        const sourceDeadline = event.registrationDeadline || event.dateTime
         const duplicated = {
             ...event,
             title: `${event.title} (Copy)`,
             dateTime: new Date(new Date(event.dateTime).getTime() + HOURS_24).toISOString(),
             registrationDeadline: new Date(
-                new Date(event.registrationDeadline).getTime() + HOURS_24,
+                new Date(sourceDeadline).getTime() + HOURS_24,
             ).toISOString(),
         }
 

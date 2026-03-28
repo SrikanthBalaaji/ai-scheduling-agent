@@ -10,3 +10,9 @@ class Event(BaseModel):
     tags: List[str]
     description: str = ""
     campus: str = "Main"
+    club_name: str = ""
+    location: str = ""
+    mode: str = "offline"
+    event_type: str = "event"
+    poster_url: str = ""
+    google_form_url: str = ""

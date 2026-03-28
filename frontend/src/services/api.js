@@ -1,5 +1,4 @@
 import axios from 'axios'
-import { mockEvents } from '../data/mockEvents'
 import { academicCalendarSeed } from '../data/mockCalendar'
 
 const api = axios.create({
@@ -7,7 +6,7 @@ const api = axios.create({
     timeout: 5000,
 })
 
-let eventsStore = [...mockEvents]
+let eventsStore = []
 let calendarStore = [...academicCalendarSeed]
 let registrationMap = {}
 let registrationDetailsStore = {}
@@ -30,6 +29,40 @@ const inferType = (tags) => {
     return String(tags[0]).toLowerCase()
 }
 
+const formatDate = (dateObj) => {
+    const year = dateObj.getFullYear()
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+    const day = String(dateObj.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+}
+
+const formatTime = (dateObj) => {
+    const hours = String(dateObj.getHours()).padStart(2, '0')
+    const minutes = String(dateObj.getMinutes()).padStart(2, '0')
+    return `${hours}:${minutes}`
+}
+
+const toBackendEventPayload = (eventPayload) => {
+    const start = new Date(eventPayload.dateTime || Date.now())
+    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000)
+
+    return {
+        title: eventPayload.title,
+        date: formatDate(start),
+        start_time: formatTime(start),
+        end_time: formatTime(end),
+        tags: [eventPayload.type || 'event'],
+        campus: eventPayload.clubName || 'Main',
+        description: eventPayload.description || '',
+        club_name: eventPayload.clubName || '',
+        location: eventPayload.location || 'Main Campus',
+        mode: eventPayload.mode || 'offline',
+        event_type: eventPayload.type || 'event',
+        poster_url: eventPayload.posterUrl || defaultPosterUrl,
+        google_form_url: eventPayload.googleFormUrl || '',
+    }
+}
+
 const toFrontendEvent = (event) => {
     const dateTime = toIso(event?.date, event?.start_time)
     const deadline = new Date(dateTime)
@@ -40,13 +73,14 @@ const toFrontendEvent = (event) => {
         id: String(event?.id ?? `ev-${Date.now()}`),
         title: event?.title || 'Untitled Event',
         description: event?.description || '',
-        clubName: event?.campus ? `${event.campus} Campus` : 'Campus Events',
+        clubName: event?.club_name || event?.campus || 'Campus Events',
         dateTime,
-        location: event?.campus ? `${event.campus} Campus` : 'Main Campus',
-        mode: 'offline',
-        type: inferType(event?.tags),
-        posterUrl: defaultPosterUrl,
+        location: event?.location || (event?.campus ? `${event.campus} Campus` : 'Main Campus'),
+        mode: event?.mode || 'offline',
+        type: event?.event_type || inferType(event?.tags),
+        posterUrl: event?.poster_url || defaultPosterUrl,
         registrations: 0,
+        googleFormUrl: event?.google_form_url || '',
         registrationDeadline: deadline.toISOString(),
         registrationFields: ['name', 'srn', 'semester'],
         customFields: [],
@@ -67,27 +101,25 @@ export const eventsApi = {
     },
 
     async createEvent(eventPayload) {
-        await sleep()
-        const newEvent = {
-            ...eventPayload,
-            id: `ev-${Date.now()}`,
-            registrations: 0,
-        }
-        eventsStore = [newEvent, ...eventsStore]
-        return { data: newEvent, status: 201, request: api.defaults }
+        const backendPayload = toBackendEventPayload(eventPayload)
+        const response = await api.post('/events', backendPayload)
+        const normalized = toFrontendEvent(response.data)
+        eventsStore = [normalized, ...eventsStore.filter((event) => event.id !== normalized.id)]
+        return { data: normalized, status: response.status, request: response.request || api.defaults }
     },
 
     async updateEvent(eventId, payload) {
-        await sleep()
+        const backendPayload = toBackendEventPayload(payload)
+        const response = await api.put(`/events/${eventId}`, backendPayload)
+        const normalized = toFrontendEvent(response.data)
         eventsStore = eventsStore.map((event) =>
-            event.id === eventId ? { ...event, ...payload } : event,
+            event.id === eventId ? normalized : event,
         )
-        const updated = eventsStore.find((event) => event.id === eventId)
-        return { data: updated, status: 200, request: api.defaults }
+        return { data: normalized, status: response.status, request: response.request || api.defaults }
     },
 
     async deleteEvent(eventId) {
-        await sleep()
+        await api.delete(`/events/${eventId}`)
         eventsStore = eventsStore.filter((event) => event.id !== eventId)
         calendarStore = calendarStore.filter((entry) => entry.sourceEventId !== eventId)
         return { data: { success: true }, status: 200, request: api.defaults }

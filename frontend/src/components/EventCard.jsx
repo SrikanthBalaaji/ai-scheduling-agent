@@ -10,10 +10,12 @@ const toDateTime = (value) =>
     })
 
 export const EventCard = ({ event, onRegister, isRegistered, canRegister = true }) => {
-    const isPastDeadline = useMemo(
-        () => new Date(event.registrationDeadline).getTime() < Date.now(),
-        [event.registrationDeadline],
+    const isPastEvent = useMemo(
+        () => new Date(event.dateTime).getTime() < Date.now(),
+        [event.dateTime],
     )
+    const hasFormLink = Boolean(event.googleFormUrl)
+    const isDisabled = !canRegister || isPastEvent || isRegistered || !hasFormLink
 
     return (
         <article className="event-card group relative overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ring-1 ring-amber-100/60 transition-all duration-300">
@@ -53,13 +55,31 @@ export const EventCard = ({ event, onRegister, isRegistered, canRegister = true 
                     </div>
                 </dl>
 
-                <button
-                    disabled={!canRegister || isPastDeadline || isRegistered}
-                    onClick={() => onRegister(event)}
-                    className="w-full rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                <a
+                    href={hasFormLink ? event.googleFormUrl : '#'}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(evt) => {
+                        if (isDisabled) {
+                            evt.preventDefault()
+                            return
+                        }
+                        onRegister(event)
+                    }}
+                    aria-disabled={isDisabled}
+                    className={`block w-full rounded-xl px-4 py-2 text-center text-sm font-semibold text-white transition ${isDisabled
+                        ? 'cursor-not-allowed bg-slate-300'
+                        : 'bg-emerald-600 hover:bg-emerald-700'
+                        }`}
                 >
-                    {isRegistered ? 'Registered' : isPastDeadline ? 'Deadline Closed' : 'Register'}
-                </button>
+                    {isRegistered
+                        ? 'Registered'
+                        : !hasFormLink
+                            ? 'Form Not Available'
+                            : isPastEvent
+                                ? 'Event Closed'
+                                : 'Register'}
+                </a>
             </div>
         </article>
     )
