@@ -312,6 +312,45 @@ def generate_reply(
             return "I couldn't find that event id. Please reply with yes <event_id> from the list."
         if action == "no_events":
             return "There are no events to recommend right now."
+        if action == "show_schedule":
+            count = int(context.get("count", 0) or 0)
+            return f"You currently have {count} item(s) in your calendar."
+        if action == "recommend_alternative":
+            alt = context.get("alternative") or "the alternative option"
+            alt_id = context.get("alternative_id") or "?"
+            blocked = context.get("blocked") or "that event"
+            conflict_with = context.get("conflict_with") or "an existing event"
+            return (
+                f"'{blocked}' conflicts with '{conflict_with}'. "
+                f"Best conflict-free pick: [{alt_id}] {alt}. Reply with yes {alt_id} to add it."
+            )
+        if action == "recommend_with_conflict":
+            blocked = context.get("blocked") or "that event"
+            blocked_id = context.get("blocked_id") or "?"
+            conflict_with = context.get("conflict_with") or "an existing event"
+            return (
+                f"'{blocked}' overlaps with '{conflict_with}', and no safer alternative is available. "
+                f"Reply with yes {blocked_id} if you still want to add it."
+            )
+        if action == "recommend_multiple":
+            if not recommendations:
+                return "I couldn't find suitable recommendations right now."
+
+            top = recommendations[:3]
+            parts = []
+            for rec in top:
+                ev = rec.get("event", {})
+                ev_id = ev.get("id", "?")
+                title = ev.get("title", "Untitled")
+                reason = rec.get("reason", "Recommended")
+                parts.append(f"[{ev_id}] {title} ({reason})")
+
+            return (
+                "Top options: " + "; ".join(parts) + ". "
+                "Reply with yes <event_id> to add one to your calendar."
+            )
+        if action == "clarify":
+            return "Tell me if you want event suggestions, conflict checks, or calendar updates."
 
     print("DEBUG: calling OpenRouter...")
 
