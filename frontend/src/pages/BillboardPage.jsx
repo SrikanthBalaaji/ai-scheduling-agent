@@ -6,12 +6,7 @@ import { useAppContext } from '../context/AppContext'
 
 const isFutureEvent = (event) => new Date(event.dateTime).getTime() >= Date.now()
 
-const passPopularity = (event, popularity) => {
-    if (popularity === 'all') return true
-    if (popularity === 'high') return event.registrations >= 150
-    if (popularity === 'medium') return event.registrations >= 100
-    return event.registrations < 100
-}
+
 
 export const BillboardPage = () => {
     const { events, user, registeredEventIds, role } = useAppContext()
@@ -19,7 +14,7 @@ export const BillboardPage = () => {
     const [filters, setFilters] = useState({
         type: 'all',
         date: '',
-        popularity: 'all',
+        campus: 'all',
         mode: 'all',
     })
 
@@ -41,11 +36,11 @@ export const BillboardPage = () => {
         return allUpcoming.filter((event) => {
             const matchesType = filters.type === 'all' || event.type === filters.type
             const matchesMode = filters.mode === 'all' || event.mode === filters.mode
-            const matchesPopularity = passPopularity(event, filters.popularity)
+            const matchesCampus = filters.campus === 'all' || event.campus === filters.campus
             const matchesDate =
                 !filters.date || event.dateTime.slice(0, 10) === filters.date
 
-            return matchesType && matchesMode && matchesPopularity && matchesDate
+            return matchesType && matchesMode && matchesCampus && matchesDate
         })
     }, [allUpcoming, filters])
 

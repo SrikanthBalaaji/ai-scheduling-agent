@@ -81,14 +81,30 @@ export const AppProvider = ({ children }) => {
         localStorage.setItem('planner-theme', theme)
     }, [theme])
 
-    const login = ({ role: nextRole, interests = [], name = 'User' }) => {
+    const MOCK_USERS = [
+    { username: 'alice', password: 'pass123', role: 'student' },
+    { username: 'bob', password: 'club456', role: 'club' },
+]
+
+    const login = async ({ username, password, interests = [] }) => {
+        await new Promise((res) => setTimeout(res, 500))
+
+        const match = MOCK_USERS.find(
+            (u) => u.username === username && u.password === password
+        )
+
+        if (!match) {
+            return { success: false, error: 'Invalid username or password.' }
+        }
+
         setUser({
             ...mockUser,
-            name,
-            role: nextRole,
+            name: match.username,
+            role: match.role,
             interests,
             id: `user-${Date.now()}`,
         })
+        return { success: true, role: match.role }
     }
 
     const logout = () => {

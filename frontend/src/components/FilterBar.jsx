@@ -14,9 +14,9 @@ const EventTypeIcon = (props) => (
     </svg>
 )
 
-const PopularityIcon = (props) => (
+const CampusIcon = (props) => (
     <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-        <path d="M12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61z" />
+        <path d="M12 3L1 9l11 6 9-4.91V17h2V9L12 3zm-7 8.26L12 15l7-3.74V18H5v-6.74z" />
     </svg>
 )
 
@@ -67,19 +67,19 @@ export const FilterBar = ({
             </label>
 
             <label className={labelBaseClass}>
-                <span className="block text-xs uppercase tracking-wide text-slate-500">Popularity</span>
-                <CustomDropdown
-                    options={[
-                        { value: 'all', label: 'All' },
-                        { value: 'high', label: 'High (150+)' },
-                        { value: 'medium', label: 'Medium (100+)' },
-                        { value: 'low', label: 'Low (<100)' },
-                    ]}
-                    value={filters.popularity}
-                    onChange={(value) => onChange('popularity', value)}
-                    icon={PopularityIcon}
-                />
-            </label>
+            <span className="block text-xs uppercase tracking-wide text-slate-500">Campus</span>
+            <CustomDropdown
+                options={[
+                    { value: 'all', label: 'All' },
+                    { value: 'EC', label: 'EC' },
+                    { value: 'RR', label: 'RR' },
+                    { value: 'Main', label: 'Main' },
+                ]}
+                value={filters.campus}
+                onChange={(value) => onChange('campus', value)}
+                icon={CampusIcon}
+            />
+        </label>
 
             <label className={labelBaseClass}>
                 <span className="block text-xs uppercase tracking-wide text-slate-500">Mode</span>

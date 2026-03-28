@@ -50,8 +50,8 @@ export const EventCard = ({ event, onRegister, isRegistered, canRegister = true 
                         <dd className="text-right">{event.location}</dd>
                     </div>
                     <div className="flex justify-between gap-2">
-                        <dt className="font-semibold">Popularity</dt>
-                        <dd className="text-right">{event.registrations} registrations</dd>
+                        <dt className="font-semibold">Campus</dt>
+                        <dd className="text-right">{event.campus}</dd>
                     </div>
                 </dl>
 

@@ -7,9 +7,12 @@ import { useAppContext } from '../context/AppContext'
 export const LoginPage = () => {
     const navigate = useNavigate()
     const { login } = useAppContext()
-    const [name, setName] = useState('')
     const [role, setRole] = useState('student')
     const [interests, setInterests] = useState(['hackathon', 'guest talk'])
+    const [username, setUsername] = useState('')
+    const [password, setPassword] = useState('')
+    const [error, setError] = useState('')
+    const [loading, setLoading] = useState(false)
 
     const toggleInterest = (interest) => {
         setInterests((prev) =>
@@ -19,15 +22,18 @@ export const LoginPage = () => {
         )
     }
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
-        login({
-            role,
-            name: name.trim() || (role === 'student' ? 'Student User' : 'Club Member'),
-            interests,
-        })
+        setError('')
+        setLoading(true)
+        const result = await login({ username, password, interests })
+        setLoading(false)
 
-        navigate(role === 'club' ? '/club' : '/billboard')
+        if (!result.success) {
+            setError(result.error)
+            return
+        }
+        navigate(result.role === 'club' ? '/club' : '/billboard')
     }
 
     return (
@@ -42,14 +48,29 @@ export const LoginPage = () => {
 
                 <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                     <label className="login-label block space-y-1 text-sm font-semibold text-slate-700">
-                        Name
+                        Username
                         <input
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Enter your name"
+                            value={username}
+                            onChange={(e) => setUsername(e.target.value)}
+                            placeholder="Enter your username"
                             className="login-input w-full rounded-xl border border-slate-300 px-3 py-2"
                         />
                     </label>
+
+                    <label className="login-label block space-y-1 text-sm font-semibold text-slate-700">
+                        Password
+                        <input
+                            type="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="Enter your password"
+                            className="login-input w-full rounded-xl border border-slate-300 px-3 py-2"
+                        />
+                    </label>
+
+                    {error && (
+                        <p className="text-sm font-medium text-red-500">{error}</p>
+                    )}
 
                     <fieldset className="space-y-2">
                         <legend className="login-label text-sm font-semibold text-slate-700">Role</legend>
@@ -69,10 +90,11 @@ export const LoginPage = () => {
                                         type="button"
                                         key={interest}
                                         onClick={() => toggleInterest(interest)}
-                                        className={`interest-chip rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition-all duration-200 ${interests.includes(interest)
-                                            ? 'interest-chip-active bg-amber-400 text-slate-900 ring-2 ring-amber-300'
-                                            : 'interest-chip-idle bg-amber-100 text-amber-900 hover:bg-amber-200'
-                                            }`}
+                                        className={`interest-chip rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide transition-all duration-200 ${
+                                            interests.includes(interest)
+                                                ? 'interest-chip-active bg-amber-400 text-slate-900 ring-2 ring-amber-300'
+                                                : 'interest-chip-idle bg-amber-100 text-amber-900 hover:bg-amber-200'
+                                        }`}
                                     >
                                         {interest}
                                     </button>
@@ -83,9 +105,10 @@ export const LoginPage = () => {
 
                     <button
                         type="submit"
-                        className="login-submit w-full rounded-xl px-4 py-2.5 text-sm font-semibold"
+                        disabled={loading}
+                        className="login-submit w-full rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
                     >
-                        Continue
+                        {loading ? 'Checking...' : 'Continue'}
                     </button>
                 </form>
             </div>
