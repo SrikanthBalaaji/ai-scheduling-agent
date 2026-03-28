@@ -1,7 +1,22 @@
 import sqlite3
+import hashlib
 
 conn = sqlite3.connect("events.db", check_same_thread=False)
 cursor = conn.cursor()
+
+cursor.execute(
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        password TEXT NOT NULL,
+        role TEXT DEFAULT 'student',
+        interests TEXT DEFAULT '',
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+    """
+)
 
 cursor.execute(
     """
@@ -25,7 +40,22 @@ cursor.execute(
 )
 
 
+def _ensure_users_schema() -> None:
+    """Ensure users table has all required columns"""
+    try:
+        cursor.execute("PRAGMA table_info(users)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        if "username" not in existing_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN username TEXT UNIQUE")
+            conn.commit()
+            print("✅ Added username column to users table")
+    except Exception as e:
+        print(f"Schema migration error: {e}")
+
+
 def _ensure_events_schema() -> None:
+    """Ensure events table has all required columns"""
     cursor.execute("PRAGMA table_info(events)")
     existing_columns = {row[1] for row in cursor.fetchall()}
 
@@ -55,7 +85,9 @@ def _ensure_events_schema() -> None:
 
     conn.commit()
 
+
 conn.commit()
+_ensure_users_schema()
 _ensure_events_schema()
 
 
@@ -80,3 +112,55 @@ def seed_events():
     )
 
     conn.commit()
+
+
+def hash_password(password: str) -> str:
+    """Hash password using SHA256"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
+def create_user(user_id: str, username: str, name: str, password: str, role: str = "student", interests: str = ""):
+    """Create a new user in the database"""
+    try:
+        hashed_password = hash_password(password)
+        cursor.execute(
+            "INSERT INTO users (id, username, name, password, role, interests) VALUES (?, ?, ?, ?, ?, ?)",
+            (user_id, username, name, hashed_password, role, interests)
+        )
+        conn.commit()
+        return {"success": True, "message": "User created successfully"}
+    except sqlite3.IntegrityError:
+        return {"success": False, "message": "Username already exists"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+def login_user(username: str, password: str):
+    """Authenticate a user"""
+    try:
+        cursor.execute("SELECT id, name, role, interests FROM users WHERE username = ?", (username,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return {"success": False, "message": "User not found"}
+        
+        # Get the password hash
+        cursor.execute("SELECT password FROM users WHERE username = ?", (username,))
+        stored_password = cursor.fetchone()[0]
+        
+        hashed_input = hash_password(password)
+        if stored_password == hashed_input:
+            return {
+                "success": True,
+                "message": "Login successful",
+                "user": {
+                    "id": user[0],
+                    "name": user[1],
+                    "role": user[2],
+                    "interests": user[3].split(",") if user[3] else []
+                }
+            }
+        else:
+            return {"success": False, "message": "Invalid password"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}

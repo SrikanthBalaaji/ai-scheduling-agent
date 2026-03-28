@@ -81,6 +81,7 @@ export const AppProvider = ({ children }) => {
         localStorage.setItem('planner-theme', theme)
     }, [theme])
 
+<<<<<<< HEAD
     const MOCK_USERS = [
     { username: 'alice', password: 'pass123', role: 'student' },
     { username: 'bob', password: 'club456', role: 'club' },
@@ -105,6 +106,28 @@ export const AppProvider = ({ children }) => {
             id: `user-${Date.now()}`,
         })
         return { success: true, role: match.role }
+=======
+    const login = (userObj) => {
+        // Handle both old format (simple object) and new format (from backend)
+        if (userObj.id) {
+            // New format from backend
+            setUser({
+                id: userObj.id,
+                name: userObj.name,
+                role: userObj.role || 'student',
+                interests: userObj.interests || [],
+            })
+        } else {
+            // Old format for backward compatibility
+            setUser({
+                ...mockUser,
+                name: userObj.name || 'User',
+                role: userObj.role || 'student',
+                interests: userObj.interests || [],
+                id: `user-${Date.now()}`,
+            })
+        }
+>>>>>>> 8be5a1b (Added user credentials page and authentication)
     }
 
     const logout = () => {

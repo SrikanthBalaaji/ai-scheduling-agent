@@ -2,7 +2,7 @@ import axios from 'axios'
 import { academicCalendarSeed } from '../data/mockCalendar'
 
 const api = axios.create({
-    baseURL: '/api',
+    baseURL: 'http://localhost:8000',
     timeout: 5000,
 })
 
@@ -169,5 +169,42 @@ export const eventsApi = {
     async getCalendar() {
         await sleep()
         return { data: [...calendarStore].sort(byDate), status: 200, request: api.defaults }
+    },
+}
+
+export const usersApi = {
+    async register(username, password, name, role = 'student', interests = []) {
+        try {
+            const response = await api.post('/auth/register', {
+                username,
+                password,
+                name,
+                role,
+                interests,
+            })
+            return {
+                success: true,
+                user: {
+                    id: response.data.user_id,
+                    name: response.data.name,
+                    role: response.data.role,
+                    interests: response.data.interests,
+                },
+            }
+        } catch (error) {
+            throw error
+        }
+    },
+
+    async login(username, password) {
+        try {
+            const response = await api.post('/auth/login', {
+                username,
+                password,
+            })
+            return response.data
+        } catch (error) {
+            throw error
+        }
     },
 }
