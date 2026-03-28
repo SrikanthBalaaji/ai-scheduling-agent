@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 import re
 import time
+import json
 
 import requests
 
@@ -32,6 +33,8 @@ DEFAULT_PROFILE_REQUEST_TIMEOUT_SECONDS = 2
 
 PERSONAL_EVENT_DRAFTS: Dict[str, Dict] = {}
 PENDING_PERSONAL_EVENTS: Dict[str, Dict] = {}
+PENDING_PERSONAL_CONFLICT_CHOICES: Dict[str, Dict] = {}
+CLARIFICATION_STATE: Dict[str, Dict] = {}  # Tracks which fields were already asked per user
 MONTH_NAME_TO_NUMBER = {
     "january": 1,
     "february": 2,
@@ -45,6 +48,22 @@ MONTH_NAME_TO_NUMBER = {
     "october": 10,
     "november": 11,
     "december": 12,
+}
+
+MONTH_TOKEN_TO_NUMBER = {
+    **MONTH_NAME_TO_NUMBER,
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "sept": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
 }
 
 INTEREST_ALIASES = {
@@ -118,6 +137,27 @@ def _get_env_int(name: str, default: int) -> int:
 def _is_discovery_enabled() -> bool:
     _load_env_once()
     raw = os.getenv("OPENROUTER_ENABLE_MODEL_DISCOVERY", "false").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _is_fast_local_responses_enabled() -> bool:
+    """Use deterministic local replies for high-frequency simple actions."""
+    _load_env_once()
+    raw = os.getenv("FAST_LOCAL_RESPONSES_ENABLED", "true").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _is_prompt_sensitivity_v2_enabled() -> bool:
+    """Feature flag for phased rollout of slot-based parsing and clarification policy."""
+    _load_env_once()
+    raw = os.getenv("PROMPT_SENSITIVITY_V2_ENABLED", "true").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _is_slot_llm_fallback_enabled() -> bool:
+    """Enable bounded LLM slot extraction only for low-confidence parses."""
+    _load_env_once()
+    raw = os.getenv("SLOT_LLM_FALLBACK_ENABLED", "false").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
@@ -264,6 +304,15 @@ def generate_reply(
     context: Dict,
     fallback: str,
 ) -> str:
+    if _is_fast_local_responses_enabled():
+        if action == "add_to_calendar":
+            event_title = context.get("event_title") or "your event"
+            return f"Added '{event_title}' to your calendar."
+        if action == "clarify_not_found":
+            return "I couldn't find that event id. Please reply with yes <event_id> from the list."
+        if action == "no_events":
+            return "There are no events to recommend right now."
+
     print("DEBUG: calling OpenRouter...")
 
     calendar_summary = (
@@ -291,8 +340,8 @@ def generate_reply(
     action_instructions = {
         "add_to_calendar": (
             f"The student confirmed they want to add '{context.get('event_title')}' to their calendar. "
-            "Write a single warm, upbeat confirmation sentence (max 20 words). "
-            "Do not ask further questions."
+            "Write a single warm, upbeat confirmation sentence (max 15 words). "
+            "Do NOT ask questions or give instructions—just confirm the action is done."
         ),
         "clarify_not_found": (
             "The student typed 'yes <id>' but the event id wasn't recognised. "
@@ -371,20 +420,133 @@ def _split_time_range(time_range: str) -> Dict[str, str]:
     }
 
 
+def _normalize_date(date_value: str) -> str:
+    if not date_value:
+        return ""
+
+    raw = str(date_value).strip()
+    if not raw:
+        return ""
+
+    formats = (
+        "%Y-%m-%d",
+        "%d-%m-%Y",
+        "%d/%m/%Y",
+        "%Y/%m/%d",
+        "%m-%d-%Y",
+        "%m/%d/%Y",
+    )
+
+    for fmt in formats:
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).strftime("%Y-%m-%d")
+    except ValueError:
+        return raw
+
+
+def _time_to_minutes(time_value: str) -> int:
+    if time_value is None:
+        return -1
+
+    raw = str(time_value).strip().lower().replace(".", "")
+    if not raw:
+        return -1
+
+    raw = re.sub(r"\s+", " ", raw)
+
+    twelve_hour_match = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$", raw)
+    if twelve_hour_match:
+        hour = int(twelve_hour_match.group(1))
+        minute = int(twelve_hour_match.group(2) or 0)
+        meridiem = twelve_hour_match.group(3)
+
+        if minute < 0 or minute > 59 or hour < 1 or hour > 12:
+            return -1
+
+        if meridiem == "pm" and hour != 12:
+            hour += 12
+        if meridiem == "am" and hour == 12:
+            hour = 0
+
+        return hour * 60 + minute
+
+    twenty_four_hour_match = re.match(r"^(\d{1,2})(?::(\d{2}))?$", raw)
+    if twenty_four_hour_match:
+        hour = int(twenty_four_hour_match.group(1))
+        minute = int(twenty_four_hour_match.group(2) or 0)
+        if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+            return -1
+        return hour * 60 + minute
+
+    return -1
+
+
+def _minutes_to_hhmm(total_minutes: int, fallback: str) -> str:
+    if total_minutes < 0:
+        return fallback
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    return f"{hours:02d}:{minutes:02d}"
+
+
+def _events_conflict(event: Dict, entry: Dict) -> bool:
+    event_date = _normalize_date(event.get("date"))
+    entry_date = _normalize_date(entry.get("date"))
+
+    if not event_date or not entry_date or event_date != entry_date:
+        return False
+
+    event_start = _time_to_minutes(event.get("start_time"))
+    event_end = _time_to_minutes(event.get("end_time"))
+    entry_start = _time_to_minutes(entry.get("start_time"))
+    entry_end = _time_to_minutes(entry.get("end_time"))
+
+    if min(event_start, event_end, entry_start, entry_end) < 0:
+        return False
+
+    if event_end <= event_start:
+        event_end += 24 * 60
+    if entry_end <= entry_start:
+        entry_end += 24 * 60
+
+    return not (event_end <= entry_start or entry_end <= event_start)
+
+
+def _first_conflict_entry(event: Dict, calendar: List[Dict]) -> Dict:
+    for entry in calendar:
+        if _events_conflict(event, entry):
+            return entry
+    return {}
+
+
 def normalize_calendar_entries(calendar: List[Dict]) -> List[Dict]:
     normalized = []
     for entry in calendar:
+        normalized_date = _normalize_date(entry.get("date"))
+
         if entry.get("start_time") and entry.get("end_time"):
+            start_minutes = _time_to_minutes(entry.get("start_time"))
+            end_minutes = _time_to_minutes(entry.get("end_time"))
             normalized.append(entry)
+            normalized[-1]["date"] = normalized_date
+            normalized[-1]["start_time"] = _minutes_to_hhmm(start_minutes, str(entry.get("start_time")))
+            normalized[-1]["end_time"] = _minutes_to_hhmm(end_minutes, str(entry.get("end_time")))
             continue
 
         time_parts = _split_time_range(entry.get("time", ""))
+        start_minutes = _time_to_minutes(time_parts["start_time"])
+        end_minutes = _time_to_minutes(time_parts["end_time"])
         normalized.append(
             {
                 "title": entry.get("title", "Untitled"),
-                "date": entry.get("date"),
-                "start_time": time_parts["start_time"],
-                "end_time": time_parts["end_time"],
+                "date": normalized_date,
+                "start_time": _minutes_to_hhmm(start_minutes, "09:00"),
+                "end_time": _minutes_to_hhmm(end_minutes, "10:00"),
                 "type": entry.get("type", "personal"),
             }
         )
@@ -459,46 +621,476 @@ def _extract_date_time(message: str) -> Dict[str, str]:
     }
 
 
-def _extract_personal_event_request(user_id: str, message: str) -> Dict:
+def _parse_event_slots(message: str) -> Dict:
+    """Tiered slot parser: strict parse -> tolerant parse -> optional LLM fallback."""
+    strict = _parse_event_slots_strict(message)
+    if strict.get("confidence", 0.0) >= 1.0:
+        return strict
+
+    tolerant = _parse_event_slots_tolerant(message, strict)
+    best = tolerant if tolerant.get("confidence", 0.0) >= strict.get("confidence", 0.0) else strict
+
+    if _is_slot_llm_fallback_enabled() and best.get("confidence", 0.0) < 1.0:
+        llm_slots = _parse_event_slots_with_llm(message)
+        if llm_slots:
+            candidate = _merge_slot_results(best, llm_slots)
+            if candidate.get("confidence", 0.0) > best.get("confidence", 0.0):
+                best = candidate
+
+    return best
+
+
+def _parse_event_slots_strict(message: str) -> Dict:
+    """Deterministic parser for well-structured natural language inputs."""
     lowered = message.lower()
+    result: Dict = {
+        "title": "",
+        "date": "",
+        "start_time": "",
+        "end_time": "",
+        "confidence": 0.0,
+        "missing_fields": [],
+    }
+
+    # ── 1. DATE ─────────────────────────────────────────────────────────────
+    day = month = year = None
+    date_start = len(lowered)
+
+    day_first = re.search(
+        r"(\d{1,2})(?:st|nd|rd|th)?(?:\s+of)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:\s*,?\s*(\d{4}))?",
+        lowered, re.IGNORECASE,
+    )
+    month_first = re.search(
+        r"(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{4}))?",
+        lowered, re.IGNORECASE,
+    )
+    iso_date = re.search(r"\b(\d{4})[-/](\d{1,2})[-/](\d{1,2})\b", lowered)
+    numeric_date = re.search(r"\b(\d{1,2})[-/](\d{1,2})(?:[-/](\d{2,4}))?\b", lowered)
+
+    if day_first:
+        day = int(day_first.group(1))
+        month = MONTH_TOKEN_TO_NUMBER[day_first.group(2).lower()]
+        year = int(day_first.group(3)) if day_first.group(3) else datetime.now().year
+        date_start = day_first.start()
+    elif month_first:
+        month = MONTH_TOKEN_TO_NUMBER[month_first.group(1).lower()]
+        day = int(month_first.group(2))
+        year = int(month_first.group(3)) if month_first.group(3) else datetime.now().year
+        date_start = month_first.start()
+    elif iso_date:
+        year = int(iso_date.group(1))
+        month = int(iso_date.group(2))
+        day = int(iso_date.group(3))
+        date_start = iso_date.start()
+    elif numeric_date:
+        first = int(numeric_date.group(1))
+        second = int(numeric_date.group(2))
+        year_raw = numeric_date.group(3)
+        year = int(year_raw) if year_raw else datetime.now().year
+        if year < 100:
+            year += 2000
+
+        # Handle both day-first and month-first numeric forms.
+        if first > 12 and second <= 12:
+            day = first
+            month = second
+        elif second > 12 and first <= 12:
+            month = first
+            day = second
+        else:
+            day = first
+            month = second
+        date_start = numeric_date.start()
+    else:
+        today = datetime.now()
+        if "today" in lowered:
+            day, month, year = today.day, today.month, today.year
+            date_start = lowered.index("today")
+        elif "tomorrow" in lowered:
+            tmrw = today + timedelta(days=1)
+            day, month, year = tmrw.day, tmrw.month, tmrw.year
+            date_start = lowered.index("tomorrow")
+
+    if day and month and year:
+        try:
+            result["date"] = datetime(year, month, day).strftime("%Y-%m-%d")
+        except ValueError:
+            day = month = year = None
+
+    if not result["date"]:
+        result["missing_fields"].append("date")
+
+    # ── 2. TIME ─────────────────────────────────────────────────────────────
+    # Allow 12h, 24h, and words like noon/midnight.
+    time_match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", lowered, re.IGNORECASE)
+    time_match_24h = re.search(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", lowered)
+    noon_match = re.search(r"\bnoon\b", lowered)
+    midnight_match = re.search(r"\bmidnight\b", lowered)
+    time_start = len(lowered)
+
+    if time_match:
+        hour = int(time_match.group(1))
+        minute = int(time_match.group(2) or 0)
+        meridiem = time_match.group(3).lower()
+        if meridiem == "pm" and hour != 12:
+            hour += 12
+        elif meridiem == "am" and hour == 12:
+            hour = 0
+        base = datetime(
+            year or datetime.now().year,
+            month or datetime.now().month,
+            day or datetime.now().day,
+        )
+        try:
+            start_dt = base.replace(hour=hour, minute=minute)
+            end_dt = start_dt + timedelta(hours=2)
+            result["start_time"] = start_dt.strftime("%H:%M")
+            result["end_time"] = end_dt.strftime("%H:%M")
+            time_start = time_match.start()
+        except ValueError:
+            pass
+    elif time_match_24h:
+        hour = int(time_match_24h.group(1))
+        minute = int(time_match_24h.group(2))
+        base = datetime(
+            year or datetime.now().year,
+            month or datetime.now().month,
+            day or datetime.now().day,
+        )
+        try:
+            start_dt = base.replace(hour=hour, minute=minute)
+            end_dt = start_dt + timedelta(hours=2)
+            result["start_time"] = start_dt.strftime("%H:%M")
+            result["end_time"] = end_dt.strftime("%H:%M")
+            time_start = time_match_24h.start()
+        except ValueError:
+            pass
+    elif noon_match or midnight_match:
+        hour = 12 if noon_match else 0
+        minute = 0
+        base = datetime(
+            year or datetime.now().year,
+            month or datetime.now().month,
+            day or datetime.now().day,
+        )
+        start_dt = base.replace(hour=hour, minute=minute)
+        end_dt = start_dt + timedelta(hours=2)
+        result["start_time"] = start_dt.strftime("%H:%M")
+        result["end_time"] = end_dt.strftime("%H:%M")
+        time_start = noon_match.start() if noon_match else midnight_match.start()
+
+    if not result["start_time"]:
+        result["missing_fields"].append("time")
+
+    # ── 3. TITLE ────────────────────────────────────────────────────────────
+    # Clip message at the earliest context boundary so calendar/date/time words
+    # are never absorbed into the title.
+    context_stops = [s for s in [date_start, time_start] if s < len(lowered)]
+    cal_phrase = re.search(r"\s+(?:to|in|on)\s+(?:my\s+)?calendar", lowered)
+    if cal_phrase:
+        context_stops.append(cal_phrase.start())
+
+    stop_at = min(context_stops) if context_stops else len(lowered)
+    clipped = lowered[:stop_at].rstrip(" ,.")
+
+    # Remove leading verb/modal phrases and leading articles
+    stripped = re.sub(
+        r"^(?:(?:please|pls)\s+)?(?:(?:can|could)\s+(?:you|u)\s+(?:(?:please|pls)\s+)?)?(?:add|schedule|put|create|set\s+up|set|remind\s+me\s+(?:about|of)|i(?:'ve)?\s+(?:have|got))\s+(?:an?\s+|the\s+)?",
+        "",
+        clipped,
+        flags=re.IGNORECASE,
+    ).strip(" ,.;:!?")
+    # Remove trailing prepositions/connectors left over from clipping (e.g. "yoga class on")
+    stripped = re.sub(r"\s+(?:on|at|for|in|from|by|a|an|the)\s*$", "", stripped, flags=re.IGNORECASE).strip(" ,.;:!?")
+    # Remove trailing relative date words that may remain in noisy shorthand.
+    stripped = re.sub(r"\s+(?:today|tomorrow|tmrw|tom)\s*$", "", stripped, flags=re.IGNORECASE).strip(" ,.;:!?")
+
+    stop_words = {"it", "that", "this", "them", "these", "those", "what", "which"}
+    if stripped and stripped.lower() not in stop_words:
+        result["title"] = stripped.title()
+    else:
+        result["missing_fields"].append("title")
+
+    # ── 4. CONFIDENCE ───────────────────────────────────────────────────────
+    filled = sum(1 for f in ("title", "date", "start_time") if result.get(f))
+    result["confidence"] = round(filled / 3.0, 2)
+
+    return result
+
+
+def _parse_event_slots_tolerant(message: str, base_slots: Dict) -> Dict:
+    """Relaxed parser for noisy shorthand (e.g. 'at 21', 'tmrw', abbreviated months)."""
+    lowered = message.lower()
+    merged = dict(base_slots)
+
+    # Tolerant date recovery: short relative words.
+    if not merged.get("date"):
+        today = datetime.now()
+        if "tmrw" in lowered or "tom" in lowered:
+            target = today + timedelta(days=1)
+            merged["date"] = target.strftime("%Y-%m-%d")
+
+    # Tolerant time recovery: "at 21" style without minutes/am-pm.
+    if not merged.get("start_time"):
+        hour_only = re.search(r"\bat\s+([01]?\d|2[0-3])\b", lowered)
+        hour_dot_min = re.search(r"\b([01]?\d|2[0-3])\.(\d{2})\b", lowered)
+        if hour_only:
+            hour = int(hour_only.group(1))
+            merged["start_time"] = f"{hour:02d}:00"
+            merged["end_time"] = f"{(hour + 2) % 24:02d}:00"
+        elif hour_dot_min:
+            hour = int(hour_dot_min.group(1))
+            minute = int(hour_dot_min.group(2))
+            if 0 <= minute <= 59:
+                base_dt = datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+                merged["start_time"] = base_dt.strftime("%H:%M")
+                merged["end_time"] = (base_dt + timedelta(hours=2)).strftime("%H:%M")
+
+    # Recompute confidence/missing fields from merged state.
+    merged["missing_fields"] = []
+    if not merged.get("title"):
+        merged["missing_fields"].append("title")
+    if not merged.get("date"):
+        merged["missing_fields"].append("date")
+    if not merged.get("start_time"):
+        merged["missing_fields"].append("time")
+
+    filled = sum(1 for f in ("title", "date", "start_time") if merged.get(f))
+    merged["confidence"] = round(filled / 3.0, 2)
+    return merged
+
+
+def _merge_slot_results(primary: Dict, secondary: Dict) -> Dict:
+    merged = dict(primary)
+    for field in ("title", "date", "start_time", "end_time"):
+        if not merged.get(field) and secondary.get(field):
+            merged[field] = secondary[field]
+
+    merged["missing_fields"] = []
+    if not merged.get("title"):
+        merged["missing_fields"].append("title")
+    if not merged.get("date"):
+        merged["missing_fields"].append("date")
+    if not merged.get("start_time"):
+        merged["missing_fields"].append("time")
+    filled = sum(1 for f in ("title", "date", "start_time") if merged.get(f))
+    merged["confidence"] = round(filled / 3.0, 2)
+    return merged
+
+
+def _validate_llm_slot_payload(payload: Dict) -> Dict:
+    validated: Dict = {}
+
+    title = str(payload.get("title", "")).strip()
+    if title and 1 <= len(title) <= 120:
+        validated["title"] = title.title()
+
+    date_val = str(payload.get("date", "")).strip()
+    if date_val:
+        try:
+            validated["date"] = datetime.strptime(date_val, "%Y-%m-%d").strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+
+    for field in ("start_time", "end_time"):
+        raw = str(payload.get(field, "")).strip()
+        if re.match(r"^([01]\d|2[0-3]):[0-5]\d$", raw):
+            validated[field] = raw
+
+    return validated
+
+
+def _parse_event_slots_with_llm(message: str) -> Dict:
+    """Bounded LLM fallback for low-confidence parses. Must return schema-validated slots."""
+    api_key = _get_openrouter_api_key()
+    if not api_key:
+        return {}
+
+    system_prompt = (
+        "Extract scheduling slots from user text. Return only compact JSON with keys: "
+        "title, date, start_time, end_time. date must be YYYY-MM-DD, times must be HH:MM 24-hour. "
+        "Use empty strings for unknown values."
+    )
+    user_prompt = f"Text: {message}"
+
+    raw = _generate_mistral_text(system_prompt, user_prompt, "{}")
+    if not raw:
+        return {}
+
+    candidate = raw.strip()
+    if "{" in candidate and "}" in candidate:
+        candidate = candidate[candidate.find("{") : candidate.rfind("}") + 1]
+
+    try:
+        payload = json.loads(candidate)
+        if not isinstance(payload, dict):
+            return {}
+    except Exception:
+        return {}
+
+    validated = _validate_llm_slot_payload(payload)
+    if not validated:
+        return {}
+
+    validated["missing_fields"] = []
+    if not validated.get("title"):
+        validated["missing_fields"].append("title")
+    if not validated.get("date"):
+        validated["missing_fields"].append("date")
+    if not validated.get("start_time"):
+        validated["missing_fields"].append("time")
+    filled = sum(1 for f in ("title", "date", "start_time") if validated.get(f))
+    validated["confidence"] = round(filled / 3.0, 2)
+    return validated
+
+
+def _extract_personal_event_request(user_id: str, message: str) -> Dict:
+    """Extract personal event from message using unified slot parser.
+    Returns complete event if all slots present, or partial slots if some missing."""
+    lowered = message.lower()
+    def has_keyword(keyword: str) -> bool:
+        if " " in keyword or "'" in keyword:
+            return keyword in lowered
+        return re.search(rf"\b{re.escape(keyword)}\b", lowered) is not None
+
     is_calendar_intent = any(term in lowered for term in ["calendar", "add", "schedule", "put"])
-    extracted = _extract_date_time(message)
+    has_personal_signal = any(
+        has_keyword(term)
+        for term in [
+            "calendar",
+            "add",
+            "schedule",
+            "put",
+            "i have",
+            "i've got",
+            "remind me",
+            "exam",
+            "test",
+            "assignment",
+            "meeting",
+            "appointment",
+            "personal",
+        ]
+    )
+    clarify_state = _get_clarification_state(user_id)
     draft = PERSONAL_EVENT_DRAFTS.get(user_id, {})
-    title_from_message = _extract_personal_event_title(message)
-    title = title_from_message or draft.get("title", "")
-    inherited_calendar_intent = bool(draft.get("calendar_intent", False))
-    calendar_intent = is_calendar_intent or inherited_calendar_intent
 
-    if title and extracted:
+    # Avoid hijacking recommendation/search prompts when no personal-event flow is active.
+    if not has_personal_signal and not draft and not clarify_state:
+        return {}
+
+    slots = _parse_event_slots(message)
+    has_fresh_full_event = bool(
+        slots.get("title") and slots.get("date") and slots.get("start_time")
+    )
+    
+    # Determine the title: prefer draft if filling in missing fields,
+    # else use freshly parsed title
+    if has_fresh_full_event:
+        # Fresh full details from user override stale partial draft values.
+        title = slots.get("title", "")
+    elif draft and clarify_state:
+        # User is filling in missing fields in response to clarification.
+        # Preserve draft values for fields already provided
+        title = draft.get("title", "") or slots.get("title", "")
+    else:
+        # First interaction or no clarification state → use parsed or draft
+        title = slots.get("title") or draft.get("title", "")
+    
+    # Update calendar_intent in slots
+    calendar_intent = is_calendar_intent or draft.get("calendar_intent", False)
+    
+    # If we have a complete event (title + date + time), return it
+    if title and slots.get("date") and slots.get("start_time"):
         PERSONAL_EVENT_DRAFTS.pop(user_id, None)
+        _clear_clarification_state(user_id)  # Clear state on successful full extraction
         return {
             "title": title,
-            "date": extracted["date"],
-            "start_time": extracted["start_time"],
-            "end_time": extracted["end_time"],
+            "date": slots["date"],
+            "start_time": slots["start_time"],
+            "end_time": slots["end_time"],
             "type": "personal",
             "calendar_intent": calendar_intent,
         }
-
-    # Only create a new draft if we have a valid title (not empty)
-    if title and not extracted:
+    
+    # Partial extraction - store all available fields in draft
+    if title or slots.get("date") or slots.get("start_time"):
         PERSONAL_EVENT_DRAFTS[user_id] = {
-            "title": title,
+            "title": title or draft.get("title", ""),
+            "date": slots.get("date", "") or draft.get("date", ""),
+            "start_time": slots.get("start_time", "") or draft.get("start_time", ""),
+            "end_time": slots.get("end_time", "") or draft.get("end_time", ""),
             "calendar_intent": calendar_intent,
         }
-        return {"pending": True, "title": title, "calendar_intent": is_calendar_intent}
+    
+    # Compute actual missing fields (excluding those now filled)
+    # Include both parsed slots AND draft values
+    actual_missing = slots.get("missing_fields", [])
+    if title or draft.get("title"):
+        actual_missing = [f for f in actual_missing if f != "title"]
+    if slots.get("date") or draft.get("date"):
+        actual_missing = [f for f in actual_missing if f != "date"]
+    if slots.get("start_time") or draft.get("start_time"):
+        actual_missing = [f for f in actual_missing if f != "time"]
+    
+    # Return slots structure for unified clarification to handle
+    return {
+        "partial": True,
+        "title": title or draft.get("title", ""),
+        "date": slots.get("date", "") or draft.get("date", ""),
+        "start_time": slots.get("start_time", "") or draft.get("start_time", ""),
+        "end_time": slots.get("end_time", "") or draft.get("end_time", ""),
+        "missing_fields": actual_missing,
+        "confidence": slots.get("confidence", 0.0),
+        "calendar_intent": calendar_intent,
+    }
 
-    if draft and extracted:
-        PERSONAL_EVENT_DRAFTS.pop(user_id, None)
+
+def _extract_personal_event_request_legacy(user_id: str, message: str) -> Dict:
+    """Legacy extractor path used when prompt-sensitivity rollout flag is disabled."""
+    lowered = message.lower()
+    def has_keyword(keyword: str) -> bool:
+        if " " in keyword or "'" in keyword:
+            return keyword in lowered
+        return re.search(rf"\b{re.escape(keyword)}\b", lowered) is not None
+
+    is_calendar_intent = any(term in lowered for term in ["calendar", "add", "schedule", "put"])
+    has_personal_signal = any(
+        has_keyword(term)
+        for term in [
+            "calendar",
+            "add",
+            "schedule",
+            "put",
+            "i have",
+            "i've got",
+            "remind me",
+            "exam",
+            "test",
+            "assignment",
+            "meeting",
+            "appointment",
+            "personal",
+        ]
+    )
+
+    if not has_personal_signal:
+        return {}
+
+    title = _extract_personal_event_title(message)
+    parsed_dt = _extract_date_time(message)
+
+    if title and parsed_dt.get("date") and parsed_dt.get("start_time"):
         return {
-            "title": draft.get("title", "Personal Event"),
-            "date": extracted["date"],
-            "start_time": extracted["start_time"],
-            "end_time": extracted["end_time"],
+            "title": title,
+            "date": parsed_dt["date"],
+            "start_time": parsed_dt["start_time"],
+            "end_time": parsed_dt["end_time"],
             "type": "personal",
-            "calendar_intent": True,
+            "calendar_intent": is_calendar_intent,
         }
 
+    # Legacy path keeps behavior conservative by not entering slot-based clarification state.
     return {}
 
 
@@ -512,6 +1104,149 @@ def _get_pending_personal_event(user_id: str) -> Dict:
 
 def _clear_pending_personal_event(user_id: str) -> None:
     PENDING_PERSONAL_EVENTS.pop(user_id, None)
+
+
+def _store_pending_personal_conflict_choice(user_id: str, event_to_add: Dict, conflicts: List[Dict]) -> None:
+    PENDING_PERSONAL_CONFLICT_CHOICES[user_id] = {
+        "event_to_add": event_to_add,
+        "conflicts": conflicts,
+    }
+
+
+def _get_pending_personal_conflict_choice(user_id: str) -> Dict:
+    return PENDING_PERSONAL_CONFLICT_CHOICES.get(user_id, {})
+
+
+def _clear_pending_personal_conflict_choice(user_id: str) -> None:
+    PENDING_PERSONAL_CONFLICT_CHOICES.pop(user_id, None)
+
+
+def _store_clarification_state(user_id: str, asked_fields: List[str], slots: Dict) -> None:
+    """Track which fields have been asked in clarification for this user."""
+    CLARIFICATION_STATE[user_id] = {
+        "asked_fields": asked_fields,
+        "last_slots": slots,
+    }
+
+
+def _get_clarification_state(user_id: str) -> Dict:
+    """Retrieve clarification state for user."""
+    return CLARIFICATION_STATE.get(user_id, {})
+
+
+def _clear_clarification_state(user_id: str) -> None:
+    """Clear clarification state when turning completes."""
+    CLARIFICATION_STATE.pop(user_id, None)
+
+
+def _generate_field_specific_clarification_prompt(missing_fields: List[str], slots: Dict) -> str:
+    """Generate a minimal, field-aware clarification prompt."""
+    # Priority: first ask for title, then date, then time
+    for field in ["title", "date", "time"]:
+        if field in missing_fields:
+            if field == "title":
+                return "What should I call this event?"
+            elif field == "date":
+                captured = []
+                if slots.get("title"):
+                    captured.append(f"the title '{slots['title']}'")
+                if slots.get("start_time"):
+                    captured.append(f"the time {slots['start_time']}")
+                prefix = f"I captured {' and '.join(captured)}. " if captured else ""
+                return prefix + "What date should I put on your calendar?"
+            elif field == "time":
+                return f"I have {slots.get('title', 'your event')} on {slots.get('date')}. What time should I set?"
+    
+    # Fallback (shouldn't reach here)
+    return "Could you provide the missing details?"
+
+
+def _handle_unified_clarification(
+    user_id: str,
+    slots: Dict,
+    message: str,
+    calendar: List[Dict],
+) -> Dict:
+    """Unified clarification path that asks for missing fields one at a time."""
+    missing = slots.get("missing_fields", [])
+    if not missing:
+        # All slots filled - this shouldn't be called
+        return {}
+    
+    clarify_state = _get_clarification_state(user_id)
+    already_asked = clarify_state.get("asked_fields", [])
+    
+    # Remove fields that are now filled (even if from draft)
+    # These shouldn't be added to "asked" or asked again
+    filled_fields = []
+    if slots.get("title"):
+        filled_fields.append("title")
+    if slots.get("date"):
+        filled_fields.append("date")
+    if slots.get("start_time"):
+        filled_fields.append("time")
+    
+    # Don't ask for fields we've already asked for or fields now filled
+    new_missing = [f for f in missing if f not in already_asked and f not in filled_fields]
+    
+    if not new_missing:
+        # We've already asked for all missing fields in this turn sequence
+        # or they're now filled. Check if we should escalate (they didn't provide what was asked).
+        # Escalation happens when: we asked for something, but it's still missing.
+        if already_asked:
+            # Find which fields are still missing from the already_asked list
+            still_missing_from_asked = [f for f in already_asked if f in missing]
+            if still_missing_from_asked:
+                # They were asked for at least one field and still haven't provided it
+                last_asked_field = still_missing_from_asked[0]  # First still-missing field
+                escalation_prompts = {
+                    "title": "I need an event title to add it to your calendar. Could you describe what you'd like to schedule?",
+                    "date": "I need a date to add your event. Could you provide a specific day or date?",
+                    "time": "I need a time to add your event. Could you tell me what time works for you?",
+                }
+                escalation_msg = escalation_prompts.get(
+                    last_asked_field,
+                    "Could you provide more details so I can help you better?"
+                )
+                return {
+                    "reply": escalation_msg,
+                    "action": "clarify",
+                    "recommended_event": None,
+                }
+        # Fallback if no escalation needed
+        return {}
+    
+    # Update which fields we're asking for in this turn
+    updated_asked = already_asked + new_missing
+    _store_clarification_state(user_id, updated_asked, slots)
+    
+    # Generate field-specific prompt
+    prompt = _generate_field_specific_clarification_prompt(new_missing, slots)
+    
+    return {
+        "reply": prompt,
+        "action": "clarify",
+        "recommended_event": None,
+    }
+
+
+def _find_conflicting_entries(event: Dict, calendar: List[Dict]) -> List[Dict]:
+    return [entry for entry in calendar if _events_conflict(event, entry)]
+
+
+def _build_personal_conflict_prompt(event_to_add: Dict, conflicts: List[Dict]) -> str:
+    event_title = event_to_add.get("title", "this personal event")
+    event_date = event_to_add.get("date", "the same day")
+    event_window = f"{event_to_add.get('start_time', '?')}-{event_to_add.get('end_time', '?')}"
+
+    conflict_titles = [entry.get("title", "an existing event") for entry in conflicts]
+    primary_conflict_title = conflict_titles[0] if conflict_titles else "an existing event"
+
+    return (
+        f"Your personal event '{event_title}' ({event_date} {event_window}) overlaps with '{primary_conflict_title}'. "
+        "Reply 'replace' to remove conflicting calendar event(s) and add this personal event, "
+        "or reply 'keep' to keep your current calendar unchanged."
+    )
 
 
 def get_user_calendar(user_id: str) -> List[Dict]:
@@ -552,12 +1287,8 @@ def detect_conflicts(events: List[Dict], calendar: List[Dict]) -> List[Dict]:
     conflicts = []
     for event in events:
         for entry in calendar:
-            if event["date"] == entry["date"]:
-                if time_overlap(
-                    event["start_time"], event["end_time"],
-                    entry["start_time"], entry["end_time"],
-                ):
-                    conflicts.append({"event": event, "conflicts_with": entry})
+            if _events_conflict(event, entry):
+                conflicts.append({"event": event, "conflicts_with": entry})
     return conflicts
 
 
@@ -589,12 +1320,8 @@ def score_event(event: Dict, calendar: List[Dict], profile: Dict) -> float:
         score += 0.5
 
     for entry in calendar:
-        if event["date"] == entry["date"]:
-            if time_overlap(
-                event["start_time"], event["end_time"],
-                entry["start_time"], entry["end_time"],
-            ):
-                score -= 3
+        if _events_conflict(event, entry):
+            score -= 3
 
     return max(0, min(10, score))
 
@@ -607,19 +1334,80 @@ def simple_agent(
     profile = get_user_profile(user_id)
     calendar = normalize_calendar_entries(calendar)
 
+    recommendation_intent_terms = ["suggest", "recommend", "attend", "what should"]
+    if any(term in message for term in recommendation_intent_terms):
+        # Recommendation intent should not be blocked by stale personal-event slot state.
+        PERSONAL_EVENT_DRAFTS.pop(user_id, None)
+        _clear_pending_personal_event(user_id)
+        _clear_clarification_state(user_id)
+
+    pending_conflict_choice = _get_pending_personal_conflict_choice(user_id)
+    if pending_conflict_choice:
+        replace_keywords = ["replace", "yes", "remove", "swap", "option 1", "1"]
+        keep_keywords = ["keep", "no", "cancel", "option 2", "2", "don't replace", "do not replace"]
+
+        if any(keyword in message for keyword in replace_keywords):
+            _clear_pending_personal_conflict_choice(user_id)
+            _clear_pending_personal_event(user_id)
+            _clear_clarification_state(user_id)
+            event_to_add = pending_conflict_choice.get("event_to_add", {})
+            conflicts = pending_conflict_choice.get("conflicts", [])
+            fallback = (
+                f"Replacing {len(conflicts)} conflicting event(s) and adding '{event_to_add.get('title', 'your personal event')}'."
+            )
+            return {
+                "reply": fallback,
+                "action": "replace_conflicting_with_personal",
+                "event_to_add": event_to_add,
+                "conflicting_events": conflicts,
+            }
+
+        if any(keyword in message for keyword in keep_keywords):
+            _clear_pending_personal_conflict_choice(user_id)
+            _clear_pending_personal_event(user_id)
+            _clear_clarification_state(user_id)
+            fallback = (
+                "Understood. I kept your existing calendar unchanged and did not add the conflicting personal event. "
+                "Share a different time if you want to add it."
+            )
+            return {
+                "reply": fallback,
+                "action": "clarify",
+                "recommended_event": None,
+            }
+
+        event_to_add = pending_conflict_choice.get("event_to_add", {})
+        conflicts = pending_conflict_choice.get("conflicts", [])
+        return {
+            "reply": _build_personal_conflict_prompt(event_to_add, conflicts),
+            "action": "clarify",
+            "recommended_event": None,
+        }
+
     # If a personal event is already pending and user repeats a date/time,
     # treat it as confirmation data instead of re-entering clarification loops.
     pending_personal_event = _get_pending_personal_event(user_id)
-    repeated_datetime = _extract_date_time(user_message)
-    if pending_personal_event and repeated_datetime and not _extract_personal_event_title(user_message):
+    _follow_up_slots = _parse_event_slots(user_message)
+    _follow_up_has_dt = bool(_follow_up_slots.get("date") and _follow_up_slots.get("start_time"))
+    if pending_personal_event and _follow_up_has_dt and not _follow_up_slots.get("title"):
         merged_event = {
             **pending_personal_event,
-            "date": repeated_datetime["date"],
-            "start_time": repeated_datetime["start_time"],
-            "end_time": repeated_datetime["end_time"],
+            "date": _follow_up_slots["date"],
+            "start_time": _follow_up_slots["start_time"],
+            "end_time": _follow_up_slots["end_time"],
             "calendar_intent": True,
         }
         _clear_pending_personal_event(user_id)
+
+        conflicts = _find_conflicting_entries(merged_event, calendar)
+        if conflicts:
+            _store_pending_personal_conflict_choice(user_id, merged_event, conflicts)
+            return {
+                "reply": _build_personal_conflict_prompt(merged_event, conflicts),
+                "action": "clarify",
+                "recommended_event": None,
+            }
+
         fallback = f"Added '{merged_event['title']}' to your calendar for {merged_event['date']} at {merged_event['start_time']}."
         return {
             "reply": generate_reply(
@@ -634,16 +1422,23 @@ def simple_agent(
             "event_to_add": merged_event,
         }
 
-    personal_event = _extract_personal_event_request(user_id, user_message)
-    if personal_event.get("pending"):
-        fallback = f"I have the title '{personal_event.get('title')}'. What exact date and time should I put on your calendar?"
-        return {
-            "reply": fallback,
-            "action": "clarify",
-            "recommended_event": None,
-        }
-
-    if personal_event.get("title") and personal_event.get("date"):
+    if _is_prompt_sensitivity_v2_enabled():
+        personal_event = _extract_personal_event_request(user_id, user_message)
+    else:
+        personal_event = _extract_personal_event_request_legacy(user_id, user_message)
+    
+    # If extraction is partial (missing fields), use unified clarification
+    if personal_event.get("partial"):
+        clarification_result = _handle_unified_clarification(
+            user_id, personal_event, user_message, calendar
+        )
+        if clarification_result:
+            return clarification_result
+        # If no clarification was returned (all fields asked), fall through
+        # This shouldn't happen in normal flow but handles edge cases
+    
+    # If we have a complete event (title + date + time)
+    if personal_event.get("title") and personal_event.get("date") and personal_event.get("start_time"):
         _store_pending_personal_event(user_id, personal_event)
         fallback = f"Added '{personal_event['title']}' to your calendar for {personal_event['date']} at {personal_event['start_time']}."
         if not personal_event.get("calendar_intent") or any(term in message for term in ["conflict", "clash", "check"]):
@@ -656,6 +1451,16 @@ def simple_agent(
                 "action": "clarify",
                 "recommended_event": None,
             }
+
+        conflicts = _find_conflicting_entries(personal_event, calendar)
+        if conflicts:
+            _store_pending_personal_conflict_choice(user_id, personal_event, conflicts)
+            return {
+                "reply": _build_personal_conflict_prompt(personal_event, conflicts),
+                "action": "clarify",
+                "recommended_event": None,
+            }
+
         return {
             "reply": generate_reply(
                 action="add_to_calendar",
@@ -677,6 +1482,8 @@ def simple_agent(
             for ev in events:
                 if str(ev.get("id")) == event_id:
                     _clear_pending_personal_event(user_id)
+                    _clear_pending_personal_conflict_choice(user_id)
+                    _clear_clarification_state(user_id)
                     fallback = "Adding event to your calendar..."
                     return {
                         "reply": generate_reply(
@@ -714,8 +1521,18 @@ def simple_agent(
     is_confirming_event = any(keyword in message for keyword in confirmation_keywords)
     
     if pending_personal_event and is_confirming_event and not any(term in message for term in ["conflict", "clash", "check"]):
+        conflicts = _find_conflicting_entries(pending_personal_event, calendar)
+        if conflicts:
+            _store_pending_personal_conflict_choice(user_id, pending_personal_event, conflicts)
+            return {
+                "reply": _build_personal_conflict_prompt(pending_personal_event, conflicts),
+                "action": "clarify",
+                "recommended_event": None,
+            }
+
         # User is confirming the pending personal event - add it
         _clear_pending_personal_event(user_id)
+        _clear_clarification_state(user_id)  # Clear clarification state on successful completion
         fallback = f"Added '{pending_personal_event['title']}' to your calendar for {pending_personal_event['date']} at {pending_personal_event['start_time']}."
         return {
             "reply": generate_reply(
@@ -744,18 +1561,19 @@ def simple_agent(
         recommendations = []
         for score, ev in top_events:
             has_conflict = False
+            conflict_title = ""
             for entry in calendar_with_pending_event:
-                if ev.get("date") == entry.get("date") and time_overlap(
-                    ev.get("start_time"), ev.get("end_time"),
-                    entry.get("start_time"), entry.get("end_time"),
-                ):
+                if _events_conflict(ev, entry):
                     has_conflict = True
+                    conflict_title = entry.get("title", "an existing event")
                     break
             recommendations.append(
                 {
                     "event": ev,
                     "score": score,
-                    "reason": "Potential conflict" if has_conflict else "No schedule conflicts",
+                    "reason": (
+                        f"Conflicts with {conflict_title}" if has_conflict else "No schedule conflicts"
+                    ),
                 }
             )
 
@@ -832,16 +1650,16 @@ def simple_agent(
                 reasons.append("Matches your interests")
 
             conflict = False
+            conflict_title = ""
             for entry in calendar:
-                if event.get("date") == entry.get("date"):
-                    if time_overlap(
-                        event.get("start_time"), event.get("end_time"),
-                        entry.get("start_time"), entry.get("end_time"),
-                    ):
-                        conflict = True
-                        break
+                if _events_conflict(event, entry):
+                    conflict = True
+                    conflict_title = entry.get("title", "an existing event")
+                    break
             if not conflict:
                 reasons.append("No schedule conflicts")
+            else:
+                reasons.append(f"Conflicts with {conflict_title}")
 
             if score >= 8:
                 reasons.append("Highly relevant")
@@ -858,18 +1676,34 @@ def simple_agent(
                 }
             )
 
+        # If conflicts exist but are absent from top 3, surface one conflicting event
+        # so users can clearly see conflict detection in recommendations.
+        if calendar:
+            top_ids = {str(rec["event"].get("id")) for rec in recommendations if rec.get("event")}
+            conflict_candidates = []
+            for score, ev in scored:
+                conflict_entry = _first_conflict_entry(ev, calendar)
+                if conflict_entry:
+                    conflict_candidates.append((score, ev, conflict_entry))
+
+            if conflict_candidates:
+                best_conflict_score, best_conflict_event, conflict_entry = conflict_candidates[0]
+                best_conflict_id = str(best_conflict_event.get("id"))
+                if best_conflict_id not in top_ids and recommendations:
+                    recommendations[-1] = {
+                        "event": best_conflict_event,
+                        "score": best_conflict_score,
+                        "reason": f"Conflicts with {conflict_entry.get('title', 'an existing event')}",
+                    }
+
         # Detect conflict for the best event
         has_conflict = False
         conflict_with = None
         for entry in calendar:
-            if best_event.get("date") == entry.get("date"):
-                if time_overlap(
-                    best_event.get("start_time"), best_event.get("end_time"),
-                    entry.get("start_time"), entry.get("end_time"),
-                ):
-                    has_conflict = True
-                    conflict_with = entry
-                    break
+            if _events_conflict(best_event, entry):
+                has_conflict = True
+                conflict_with = entry
+                break
 
         if has_conflict:
             # Find the best conflict-free alternative among top picks
@@ -877,13 +1711,9 @@ def simple_agent(
             for score, ev in top_events:
                 conflict = False
                 for entry in calendar:
-                    if ev.get("date") == entry.get("date"):
-                        if time_overlap(
-                            ev.get("start_time"), ev.get("end_time"),
-                            entry.get("start_time"), entry.get("end_time"),
-                        ):
-                            conflict = True
-                            break
+                    if _events_conflict(ev, entry):
+                        conflict = True
+                        break
                 if not conflict:
                     alternative_event = ev
                     break

@@ -17,6 +17,7 @@ Graph Caching:
 from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass, field
 from threading import Lock
+import re
 from langgraph.graph import StateGraph, END
 from langgraph.types import Send
 
@@ -51,6 +52,64 @@ class GraphState:
     pending_confirmation_tokens: List[Union[str, int]] = field(default_factory=list)
     calendar_write_result: Optional[Dict[str, Any]] = None
     final_response: Optional[Dict[str, Any]] = None
+    action_path: str = "decision->response"
+
+
+def _is_calendar_add_like_message(message: str) -> bool:
+    lowered = (message or "").lower()
+    add_terms = ["add", "schedule", "put", "calendar", "exam", "test", "assignment", "meeting"]
+    return any(term in lowered for term in add_terms)
+
+
+def _derive_observability_payload(state: GraphState) -> Dict[str, Any]:
+    response = state.agent_response or {}
+    action = str(response.get("action", "unknown"))
+    payload: Dict[str, Any] = {
+        "action": action,
+        "action_path": state.action_path,
+        "clarification_reason_tags": [],
+    }
+
+    if _is_calendar_add_like_message(state.message):
+        try:
+            from agent.agent import _parse_event_slots
+
+            slots = _parse_event_slots(state.message)
+            missing_fields = list(slots.get("missing_fields", [])) if isinstance(slots, dict) else []
+            payload["extraction"] = {
+                "confidence": float(slots.get("confidence", 0.0)) if isinstance(slots, dict) else 0.0,
+                "missing_fields": missing_fields,
+                "is_complete": len(missing_fields) == 0,
+            }
+        except Exception:
+            payload["extraction"] = {
+                "confidence": 0.0,
+                "missing_fields": ["unavailable"],
+                "is_complete": False,
+            }
+
+    if action == "clarify":
+        reply_text = str(response.get("reply", "")).lower()
+        tags: List[str] = []
+
+        if response.get("conflicting_events"):
+            tags.append("conflict_overlap_confirmed")
+        if "valid id" in reply_text or "no event found by that id" in reply_text:
+            tags.append("confirmation_id_not_found")
+        if "kept your existing calendar unchanged" in reply_text:
+            tags.append("conflict_keep_existing")
+
+        extraction = payload.get("extraction", {})
+        if isinstance(extraction, dict):
+            for field in extraction.get("missing_fields", []):
+                if re.match(r"^[a-z_]+$", str(field)):
+                    tags.append(f"missing_{field}")
+
+        if not tags:
+            tags.append("generic_clarify")
+        payload["clarification_reason_tags"] = tags
+
+    return payload
 
 
 def _agent_decision_node(state: GraphState) -> GraphState:
@@ -81,24 +140,40 @@ def _calendar_action_node(state: GraphState) -> GraphState:
     """
     Action node: perform side effects (calendar writes) triggered by agent decision.
     
-    Only called when agent_response action is "add_to_calendar".
-    Calls calendar API-layer function to persist event.
+    Called when agent_response action requires calendar side effects.
+    Calls calendar API-layer functions to persist event or replace conflicts.
     Stores result in calendar_write_result for response_node context.
     """
-    from routes.calendar import add_calendar_event, CalendarEvent
-    
-    if state.agent_response and state.agent_response.get("action") == "add_to_calendar":
+    from routes.calendar import add_calendar_event, remove_conflicting_calendar_events, CalendarEvent
+
+    if state.agent_response and state.agent_response.get("action") in {
+        "add_to_calendar",
+        "replace_conflicting_with_personal",
+    }:
         event_to_add = state.agent_response.get("event_to_add")
         if event_to_add:
+            action = state.agent_response.get("action")
+            replacement_result = None
+            if action == "replace_conflicting_with_personal":
+                replacement_result = remove_conflicting_calendar_events(
+                    state.user_id,
+                    event_to_add.get("date"),
+                    event_to_add.get("start_time"),
+                    event_to_add.get("end_time"),
+                )
+
             event_obj = CalendarEvent(
                 title=event_to_add.get("title"),
                 time=f"{event_to_add.get('start_time')}-{event_to_add.get('end_time')}",
                 date=event_to_add.get("date"),
             )
-            result = add_calendar_event(state.user_id, event_obj)
-            state.calendar_write_result = result
+            add_result = add_calendar_event(state.user_id, event_obj)
+            state.calendar_write_result = {
+                "replacement": replacement_result,
+                "add": add_result,
+            }
             # Update local calendar state for next turn
-            state.calendar.append(event_obj.dict())
+            state.calendar.append(event_obj.model_dump(exclude_none=True))
     
     return state
 
@@ -127,6 +202,10 @@ def _response_node(state: GraphState) -> GraphState:
         final["confirmation_token"] = response["confirmation_token"]
     if "event_to_add" in response:
         final["event_to_add"] = response["event_to_add"]
+    if "conflicting_events" in response:
+        final["conflicting_events"] = response["conflicting_events"]
+
+    final["_trace"] = _derive_observability_payload(state)
     
     state.final_response = final
     return state
@@ -136,14 +215,16 @@ def _route_after_decision(state: GraphState) -> str:
     """
     Conditional edge: route to action_node if side effects needed, else to response_node.
     
-    Routes to "action" if agent_response action is "add_to_calendar".
+    Routes to "action" if agent_response action mutates calendar state.
     Routes to "response" for all other cases (recommend, clarify, show_schedule, etc).
     """
     action = state.agent_response.get("action") if state.agent_response else None
-    
-    if action == "add_to_calendar":
+
+    if action in {"add_to_calendar", "replace_conflicting_with_personal"}:
+        state.action_path = "decision->action->response"
         return "action"
     else:
+        state.action_path = "decision->response"
         return "response"
 
 
