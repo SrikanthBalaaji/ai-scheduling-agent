@@ -1,0 +1,9 @@
+{
+  "one_turn_add_success_rate_target": 0.85,
+  "avg_turns_to_completion_target": 2.0,
+  "clarify_rate_target": 0.25,
+  "clarification_repeat_rate_target": 0.05,
+  "fallback_response_rate_target": 0.1,
+  "redundant_followup_suspected_rate_target": 0.05,
+  "avg_latency_ms_target": 1500
+}

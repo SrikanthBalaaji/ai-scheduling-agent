@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "description": "Fixed prompt corpus for prompt-sensitivity regression checks.",
+  "prompts": [
+    "add math test to my calendar on 28th march 9pm",
+    "please schedule ai workshop for april 2nd at 10 am",
+    "can you add coding sprint on 29/03/2026 at 21:15",
+    "add deploy task on 2026-04-02 at midnight",
+    "add standup tomorrow at 9am",
+    "i have an assignment",
+    "i have an assignment on march 30",
+    "i have an assignment at 2pm",
+    "reschedule my project review to march 31 at 4pm",
+    "yes 104",
+    "yes 999",
+    "suggest events for ai",
+    "what should i attend this week",
+    "add quiz prep on april 1 at 6pm",
+    "add quiz prep on april 1",
+    "add quiz prep at 6pm",
+    "replace",
+    "keep",
+    "pls add yoga class tmrw at 7",
+    "u can add interview prep on mar 31 at 21"
+  ]
+}
