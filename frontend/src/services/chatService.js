@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://127.0.0.1:8000'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8002'
 const DEFAULT_USER_ID = 'demo'
 
 const normalizeChatResponse = (data) => ({
@@ -47,7 +47,7 @@ export const sendChatMessage = async ({ userId, message }) => {
     } catch {
         return normalizeChatResponse({
             action: 'error',
-            reply: 'Unable to reach backend chat service. Ensure backend is running on port 8000.',
+            reply: `Unable to reach backend chat service at ${API_BASE_URL}. Ensure backend is running.`,
         })
     }
 }

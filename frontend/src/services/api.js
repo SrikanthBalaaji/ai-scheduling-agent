@@ -1,8 +1,10 @@
 import axios from 'axios'
 import { academicCalendarSeed } from '../data/mockCalendar'
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8002'
+
 const api = axios.create({
-    baseURL: 'http://localhost:8000',
+    baseURL: API_BASE_URL,
     timeout: 5000,
 })
 

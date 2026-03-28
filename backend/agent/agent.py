@@ -16,6 +16,7 @@ _DISCOVERED_MODELS_CACHE: List[str] = []
 _DISCOVERED_MODELS_CACHE_TS = 0.0
 
 MISTRAL_MODEL_FALLBACKS = [
+    "openrouter/auto",
     "mistralai/mistral-7b-instruct-v0.1",
     "mistralai/mistral-7b-instruct",
     "mistralai/mistral-7b-instruct-v0.2",
@@ -119,7 +120,8 @@ def _get_openrouter_api_key() -> str:
 
 def _get_mistral_model() -> str:
     _load_env_once()
-    return os.getenv("MISTRAL_MODEL", "mistralai/mistral-7b-instruct-v0.1")
+    # Use OpenRouter auto-routing by default so an available model is selected.
+    return os.getenv("MISTRAL_MODEL", "openrouter/auto")
 
 
 def _get_env_int(name: str, default: int) -> int:
@@ -136,14 +138,15 @@ def _get_env_int(name: str, default: int) -> int:
 
 def _is_discovery_enabled() -> bool:
     _load_env_once()
-    raw = os.getenv("OPENROUTER_ENABLE_MODEL_DISCOVERY", "false").strip().lower()
+    raw = os.getenv("OPENROUTER_ENABLE_MODEL_DISCOVERY", "true").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
 def _is_fast_local_responses_enabled() -> bool:
     """Use deterministic local replies for high-frequency simple actions."""
     _load_env_once()
-    raw = os.getenv("FAST_LOCAL_RESPONSES_ENABLED", "true").strip().lower()
+    # Default to LLM-backed response generation unless explicitly overridden.
+    raw = os.getenv("FAST_LOCAL_RESPONSES_ENABLED", "false").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
@@ -216,7 +219,10 @@ def _generate_mistral_text(system_prompt: str, user_prompt: str, fallback: str) 
     openrouter_api_key = _get_openrouter_api_key()
     if not openrouter_api_key:
         print("OPENROUTER ERROR: OPENROUTER_API_KEY is missing")
-        return fallback
+        return (
+            "I could not reach the LLM because OPENROUTER_API_KEY is missing. "
+            "Please set a valid key in backend/.env and retry."
+        )
 
     headers = {
         "Authorization": f"Bearer {openrouter_api_key}",
@@ -274,7 +280,12 @@ def _generate_mistral_text(system_prompt: str, user_prompt: str, fallback: str) 
 
             if response.status_code >= 400:
                 print(f"OPENROUTER ERROR: model={model_name} HTTP {response.status_code} - {response.text[:300]}")
-                return fallback
+                if response.status_code == 401:
+                    return (
+                        "I could not authenticate with OpenRouter (HTTP 401). "
+                        "Please verify OPENROUTER_API_KEY in backend/.env and restart the backend."
+                    )
+                continue
 
             data = response.json()
             choices = data.get("choices", []) if isinstance(data, dict) else []
@@ -289,7 +300,10 @@ def _generate_mistral_text(system_prompt: str, user_prompt: str, fallback: str) 
             print(f"OPENROUTER WARN: empty response choices for model {model_name}")
 
         print("OPENROUTER ERROR: No available model endpoints returned usable content")
-        return fallback
+        return (
+            "I could not get a response from the configured LLM models right now. "
+            "Please verify your OpenRouter model access and try again."
+        )
 
     except Exception as e:
         print("OPENROUTER ERROR:", e)
