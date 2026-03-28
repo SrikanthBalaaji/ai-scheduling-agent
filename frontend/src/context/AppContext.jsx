@@ -81,53 +81,52 @@ export const AppProvider = ({ children }) => {
         localStorage.setItem('planner-theme', theme)
     }, [theme])
 
-<<<<<<< HEAD
     const MOCK_USERS = [
-    { username: 'alice', password: 'pass123', role: 'student' },
-    { username: 'bob', password: 'club456', role: 'club' },
-]
+        { username: 'alice', password: 'pass123', role: 'student' },
+        { username: 'bob', password: 'club456', role: 'club' },
+    ]
 
-    const login = async ({ username, password, interests = [] }) => {
-        await new Promise((res) => setTimeout(res, 500))
-
-        const match = MOCK_USERS.find(
-            (u) => u.username === username && u.password === password
-        )
-
-        if (!match) {
-            return { success: false, error: 'Invalid username or password.' }
+    const login = (payload) => {
+        // Preferred path: user object returned by backend auth APIs.
+        if (payload?.id) {
+            setUser({
+                id: payload.id,
+                name: payload.name,
+                role: payload.role || 'student',
+                interests: payload.interests || [],
+            })
+            return { success: true, role: payload.role || 'student' }
         }
 
-        setUser({
-            ...mockUser,
-            name: match.username,
-            role: match.role,
-            interests,
-            id: `user-${Date.now()}`,
-        })
-        return { success: true, role: match.role }
-=======
-    const login = (userObj) => {
-        // Handle both old format (simple object) and new format (from backend)
-        if (userObj.id) {
-            // New format from backend
-            setUser({
-                id: userObj.id,
-                name: userObj.name,
-                role: userObj.role || 'student',
-                interests: userObj.interests || [],
-            })
-        } else {
-            // Old format for backward compatibility
+        // Backward compatibility path: local mock credential object.
+        if (payload?.username && payload?.password) {
+            const match = MOCK_USERS.find(
+                (u) => u.username === payload.username && u.password === payload.password,
+            )
+
+            if (!match) {
+                return { success: false, error: 'Invalid username or password.' }
+            }
+
             setUser({
                 ...mockUser,
-                name: userObj.name || 'User',
-                role: userObj.role || 'student',
-                interests: userObj.interests || [],
+                name: match.username,
+                role: match.role,
+                interests: payload.interests || [],
                 id: `user-${Date.now()}`,
             })
+            return { success: true, role: match.role }
         }
->>>>>>> 8be5a1b (Added user credentials page and authentication)
+
+        // Fallback shape support.
+        setUser({
+            ...mockUser,
+            name: payload?.name || 'User',
+            role: payload?.role || 'student',
+            interests: payload?.interests || [],
+            id: `user-${Date.now()}`,
+        })
+        return { success: true, role: payload?.role || 'student' }
     }
 
     const logout = () => {

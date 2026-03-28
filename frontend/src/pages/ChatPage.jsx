@@ -9,7 +9,7 @@ const getEventByMessage = (events, message) => {
 }
 
 export const ChatPage = () => {
-    const { events, addCalendarEntry } = useAppContext()
+    const { user, events, addCalendarEntry } = useAppContext()
     const [messages, setMessages] = useState([
         {
             id: 'welcome',
@@ -51,7 +51,26 @@ export const ChatPage = () => {
             return
         }
 
-        const response = await sendChatMessage(message)
+        const response = await sendChatMessage({
+            userId: user?.id,
+            message,
+        })
+
+        if (response?.action === 'add_to_calendar' && response?.event_to_add) {
+            const event = response.event_to_add
+            const start = event.start_time || '09:00'
+            const date = event.date || new Date().toISOString().slice(0, 10)
+            await addCalendarEntry({
+                id: `chat-${Date.now()}`,
+                sourceEventId: null,
+                title: event.title || 'Untitled Event',
+                category: 'events',
+                dateTime: `${date}T${start}:00`,
+                durationHours: 2,
+                location: 'Calendar',
+            })
+        }
+
         const reply = remindMe ? `${response.reply} Reminder: ON.` : response.reply
 
         setMessages((prev) => [...prev, { id: `${Date.now()}-b`, sender: 'bot', message: reply }])
