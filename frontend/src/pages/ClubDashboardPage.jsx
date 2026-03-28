@@ -20,6 +20,61 @@ const toIsoFromDateOnly = (dateString, hour = 12, minute = 0) => {
     return new Date(year, month - 1, day, hour, minute, 0, 0).toISOString()
 }
 
+const toIsoFromDayMonthYear = (day, month, year, hour = 10, minute = 0) => {
+    if (!day || !month || !year) return ''
+    const d = Number(day)
+    const m = Number(month)
+    const y = Number(year)
+    if (!d || !m || !y) return ''
+    return new Date(y, m - 1, d, hour, minute, 0, 0).toISOString()
+}
+
+const getDateComponents = (isoString) => {
+    if (!isoString) {
+        const now = new Date()
+        return {
+            day: String(now.getDate()).padStart(2, '0'),
+            month: String(now.getMonth() + 1).padStart(2, '0'),
+            year: String(now.getFullYear()),
+        }
+    }
+    const date = new Date(isoString)
+    return {
+        day: String(date.getDate()).padStart(2, '0'),
+        month: String(date.getMonth() + 1).padStart(2, '0'),
+        year: String(date.getFullYear()),
+    }
+}
+
+const getDaysInMonth = (month, year) => {
+    return new Date(year, month, 0).getDate()
+}
+
+const getCurrentYear = () => new Date().getFullYear()
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const MONTH_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+const getMonthLabel = (monthNum) => {
+    const m = Number(monthNum)
+    if (!m || m < 1 || m > 12) return ''
+    return MONTH_SHORT[m - 1]
+}
+
+const parseMonthInput = (input) => {
+    if (!input) return ''
+    const inputLower = input.toLowerCase()
+    const matched = MONTHS.findIndex(m => m.toLowerCase().startsWith(inputLower))
+    if (matched !== -1) return String(matched + 1).padStart(2, '0')
+
+    const shortMatched = MONTH_SHORT.findIndex(m => m.toLowerCase().startsWith(inputLower))
+    if (shortMatched !== -1) return String(shortMatched + 1).padStart(2, '0')
+
+    const num = Number(input)
+    if (num >= 1 && num <= 12) return String(num).padStart(2, '0')
+    return ''
+}
+
 const deriveDeadline = (dateTime) => {
     if (!dateTime) return ''
     const deadline = new Date(dateTime)
@@ -39,6 +94,8 @@ export const ClubDashboardPage = () => {
 
     const [form, setForm] = useState(initialForm)
     const [editing, setEditing] = useState(null)
+    const [dateInputs, setDateInputs] = useState({ day: '', month: '', year: '' })
+    const [editDateInputs, setEditDateInputs] = useState({ day: '', month: '', year: '' })
 
     const clubEvents = useMemo(() => {
         if (!form.clubName.trim()) return events
@@ -124,15 +181,99 @@ export const ClubDashboardPage = () => {
                         className="w-full rounded-lg border border-slate-300 px-3 py-2"
                     />
 
-                    <input
-                        required
-                        type="date"
-                        value={form.dateTime ? form.dateTime.slice(0, 10) : ''}
-                        onChange={(e) =>
-                            setForm((prev) => ({ ...prev, dateTime: toIsoFromDateOnly(e.target.value, 10, 0) }))
-                        }
-                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-800 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100"
-                    />
+                    <div className="grid grid-cols-3 gap-2">
+                        {/* Day Input */}
+                        <div>
+                            <input
+                                required
+                                type="text"
+                                inputMode="numeric"
+                                maxLength="2"
+                                value={dateInputs.day}
+                                onChange={(e) => {
+                                    const day = e.target.value.replace(/[^0-9]/g, '')
+                                    setDateInputs((prev) => ({ ...prev, day }))
+                                    if (day && day >= 1 && day <= 31) {
+                                        const { month, year } = getDateComponents(form.dateTime)
+                                        setForm((prev) => ({
+                                            ...prev,
+                                            dateTime: toIsoFromDayMonthYear(day, month, year),
+                                        }))
+                                    }
+                                }}
+                                onFocus={(e) => {
+                                    if (!dateInputs.day) {
+                                        setDateInputs((prev) => ({ ...prev, day: getDateComponents(form.dateTime).day }))
+                                    }
+                                }}
+                                placeholder="Day"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                            />
+                        </div>
+
+                        {/* Month Input with filtering */}
+                        <div>
+                            <input
+                                required
+                                type="text"
+                                value={dateInputs.month}
+                                onChange={(e) => {
+                                    const input = e.target.value
+                                    setDateInputs((prev) => ({ ...prev, month: input }))
+                                    const parsed = parseMonthInput(input)
+                                    if (parsed) {
+                                        const { day, year } = getDateComponents(form.dateTime)
+                                        setForm((prev) => ({
+                                            ...prev,
+                                            dateTime: toIsoFromDayMonthYear(day, parsed, year),
+                                        }))
+                                    }
+                                }}
+                                onFocus={(e) => {
+                                    if (!dateInputs.month) {
+                                        setDateInputs((prev) => ({ ...prev, month: getMonthLabel(getDateComponents(form.dateTime).month) }))
+                                    }
+                                }}
+                                placeholder="Month (Jan-Dec or type A, M, etc.)"
+                                list="months-list"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                            />
+                            <datalist id="months-list">
+                                {MONTH_SHORT.map((month, i) => (
+                                    <option key={i} value={month} />
+                                ))}
+                            </datalist>
+                        </div>
+
+                        {/* Year Input */}
+                        <div>
+                            <input
+                                required
+                                type="text"
+                                inputMode="numeric"
+                                maxLength="4"
+                                value={dateInputs.year}
+                                onChange={(e) => {
+                                    const year = e.target.value.replace(/[^0-9]/g, '')
+                                    setDateInputs((prev) => ({ ...prev, year }))
+                                    if (year && year >= 2025 && year <= 2035) {
+                                        const { day, month } = getDateComponents(form.dateTime)
+                                        setForm((prev) => ({
+                                            ...prev,
+                                            dateTime: toIsoFromDayMonthYear(day, month, year),
+                                        }))
+                                    }
+                                }}
+                                onFocus={(e) => {
+                                    if (!dateInputs.year) {
+                                        setDateInputs((prev) => ({ ...prev, year: getDateComponents(form.dateTime).year }))
+                                    }
+                                }}
+                                placeholder="Year"
+                                className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                            />
+                        </div>
+                    </div>
 
                     <input
                         required
@@ -265,14 +406,96 @@ export const ClubDashboardPage = () => {
                             placeholder="Club Name"
                             className="w-full rounded-lg border border-slate-300 px-3 py-2"
                         />
-                        <input
-                            type="date"
-                            value={editing.dateTime ? editing.dateTime.slice(0, 10) : ''}
-                            onChange={(e) =>
-                                setEditing((prev) => ({ ...prev, dateTime: toIsoFromDateOnly(e.target.value, 10, 0) }))
-                            }
-                            className="w-full rounded-lg border border-slate-300 px-3 py-2"
-                        />
+                        <div className="grid grid-cols-3 gap-2">
+                            {/* Day Input */}
+                            <div>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength="2"
+                                    value={editDateInputs.day}
+                                    onChange={(e) => {
+                                        const day = e.target.value.replace(/[^0-9]/g, '')
+                                        setEditDateInputs((prev) => ({ ...prev, day }))
+                                        if (day && day >= 1 && day <= 31) {
+                                            const { month, year } = getDateComponents(editing.dateTime)
+                                            setEditing((prev) => ({
+                                                ...prev,
+                                                dateTime: toIsoFromDayMonthYear(day, month, year),
+                                            }))
+                                        }
+                                    }}
+                                    onFocus={(e) => {
+                                        if (!editDateInputs.day) {
+                                            setEditDateInputs((prev) => ({ ...prev, day: getDateComponents(editing.dateTime).day }))
+                                        }
+                                    }}
+                                    placeholder="Day"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                />
+                            </div>
+
+                            {/* Month Input with filtering */}
+                            <div>
+                                <input
+                                    type="text"
+                                    value={editDateInputs.month}
+                                    onChange={(e) => {
+                                        const input = e.target.value
+                                        setEditDateInputs((prev) => ({ ...prev, month: input }))
+                                        const parsed = parseMonthInput(input)
+                                        if (parsed) {
+                                            const { day, year } = getDateComponents(editing.dateTime)
+                                            setEditing((prev) => ({
+                                                ...prev,
+                                                dateTime: toIsoFromDayMonthYear(day, parsed, year),
+                                            }))
+                                        }
+                                    }}
+                                    onFocus={(e) => {
+                                        if (!editDateInputs.month) {
+                                            setEditDateInputs((prev) => ({ ...prev, month: getMonthLabel(getDateComponents(editing.dateTime).month) }))
+                                        }
+                                    }}
+                                    placeholder="Month (Jan-Dec or type A, M, etc.)"
+                                    list="months-list-edit"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                />
+                                <datalist id="months-list-edit">
+                                    {MONTH_SHORT.map((month, i) => (
+                                        <option key={i} value={month} />
+                                    ))}
+                                </datalist>
+                            </div>
+
+                            {/* Year Input */}
+                            <div>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength="4"
+                                    value={editDateInputs.year}
+                                    onChange={(e) => {
+                                        const year = e.target.value.replace(/[^0-9]/g, '')
+                                        setEditDateInputs((prev) => ({ ...prev, year }))
+                                        if (year && year >= 2025 && year <= 2035) {
+                                            const { day, month } = getDateComponents(editing.dateTime)
+                                            setEditing((prev) => ({
+                                                ...prev,
+                                                dateTime: toIsoFromDayMonthYear(day, month, year),
+                                            }))
+                                        }
+                                    }}
+                                    onFocus={(e) => {
+                                        if (!editDateInputs.year) {
+                                            setEditDateInputs((prev) => ({ ...prev, year: getDateComponents(editing.dateTime).year }))
+                                        }
+                                    }}
+                                    placeholder="Year"
+                                    className="w-full rounded-lg border border-slate-300 px-3 py-2"
+                                />
+                            </div>
+                        </div>
                         <input
                             value={editing.location || ''}
                             onChange={(e) => setEditing((prev) => ({ ...prev, location: e.target.value }))}
