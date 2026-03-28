@@ -4,7 +4,7 @@ import { academicCalendarSeed } from '../data/mockCalendar'
 
 const api = axios.create({
     baseURL: '/api',
-    timeout: 1000,
+    timeout: 5000,
 })
 
 let eventsStore = [...mockEvents]
@@ -16,10 +16,54 @@ const sleep = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const byDate = (a, b) => new Date(a.dateTime) - new Date(b.dateTime)
 
+const defaultPosterUrl =
+    'https://images.unsplash.com/photo-1517048676732-d65bc937f952?auto=format&fit=crop&w=1200&q=80'
+
+const toIso = (date, time = '09:00') => {
+    if (!date) return new Date().toISOString()
+    const safeTime = time && /^\d{2}:\d{2}$/.test(time) ? time : '09:00'
+    return `${date}T${safeTime}:00`
+}
+
+const inferType = (tags) => {
+    if (!Array.isArray(tags) || tags.length === 0) return 'event'
+    return String(tags[0]).toLowerCase()
+}
+
+const toFrontendEvent = (event) => {
+    const dateTime = toIso(event?.date, event?.start_time)
+    const deadline = new Date(dateTime)
+    deadline.setDate(deadline.getDate() - 1)
+    deadline.setHours(23, 59, 0, 0)
+
+    return {
+        id: String(event?.id ?? `ev-${Date.now()}`),
+        title: event?.title || 'Untitled Event',
+        description: event?.description || '',
+        clubName: event?.campus ? `${event.campus} Campus` : 'Campus Events',
+        dateTime,
+        location: event?.campus ? `${event.campus} Campus` : 'Main Campus',
+        mode: 'offline',
+        type: inferType(event?.tags),
+        posterUrl: defaultPosterUrl,
+        registrations: 0,
+        registrationDeadline: deadline.toISOString(),
+        registrationFields: ['name', 'srn', 'semester'],
+        customFields: [],
+    }
+}
+
 export const eventsApi = {
     async getEvents() {
-        await sleep()
-        return { data: [...eventsStore].sort(byDate), status: 200, request: api.defaults }
+        try {
+            const response = await api.get('/events')
+            const normalized = (response.data || []).map(toFrontendEvent).sort(byDate)
+            eventsStore = normalized
+            return { data: normalized, status: response.status, request: response.request || api.defaults }
+        } catch (_error) {
+            await sleep()
+            return { data: [...eventsStore].sort(byDate), status: 200, request: api.defaults }
+        }
     },
 
     async createEvent(eventPayload) {
